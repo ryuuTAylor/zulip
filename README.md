@@ -78,3 +78,5 @@ following us on [LinkedIn](https://www.linkedin.com/company/zulip-project/),
 
 Zulip is distributed under the
 [Apache 2.0](https://github.com/zulip/zulip/blob/main/LICENSE) license.
+
+This version is a forked version of zulip by a CS 5150: Software Engineering group at Cornell University.
