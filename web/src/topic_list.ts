@@ -68,12 +68,18 @@ export function clear(): void {
 }
 
 export function close(): void {
-    zoomed = false;
     clear();
-    ui_util.enable_left_sidebar_search();
+    if (zoomed) {
+        zoomed = false;
+        ui_util.enable_left_sidebar_search();
+    }
 }
 
 export function zoom_out(): void {
+    if (!zoomed) {
+        return;
+    }
+
     zoomed = false;
     ui_util.enable_left_sidebar_search();
 
@@ -87,13 +93,13 @@ export function zoom_out(): void {
     const stream_id = stream_ids[0];
     const widget = active_widgets.get(stream_id);
     assert(widget !== undefined);
-    const parent_widget = widget.get_parent();
+    const $stream_li = widget.get_stream_li();
 
     // Reset the resolved topic filter since we moved away
     // from the view.
     topic_filter_pill_widget?.clear(true);
 
-    rebuild_left_sidebar(parent_widget, stream_id);
+    rebuild_left_sidebar($stream_li, stream_id);
 }
 
 type ListInfoNodeOptions =
@@ -266,16 +272,16 @@ export function is_full_topic_history_available(
 export class TopicListWidget {
     topic_list_class_name = "topic-list";
     prior_dom: vdom.Tag<ListInfoNodeOptions> | undefined = undefined;
-    $parent_elem: JQuery;
+    $stream_li: JQuery;
     my_stream_id: number;
     filter_topics: (topic_names: string[]) => string[];
 
     constructor(
-        $parent_elem: JQuery,
+        $stream_li: JQuery,
         my_stream_id: number,
         filter_topics: (topic_names: string[]) => string[],
     ) {
-        this.$parent_elem = $parent_elem;
+        this.$stream_li = $stream_li;
         this.my_stream_id = my_stream_id;
         this.filter_topics = filter_topics;
     }
@@ -334,8 +340,8 @@ export class TopicListWidget {
         return dom;
     }
 
-    get_parent(): JQuery {
-        return this.$parent_elem;
+    get_stream_li(): JQuery {
+        return this.$stream_li;
     }
 
     get_stream_id(): number {
@@ -343,7 +349,7 @@ export class TopicListWidget {
     }
 
     remove(): void {
-        this.$parent_elem.find(`.${this.topic_list_class_name}`).remove();
+        this.$stream_li.find(`.${this.topic_list_class_name}`).remove();
         this.prior_dom = undefined;
     }
 
@@ -356,10 +362,10 @@ export class TopicListWidget {
 
         const replace_content = (html: string): void => {
             this.remove();
-            this.$parent_elem.append($(html));
+            this.$stream_li.append($(html));
         };
 
-        const find = (): JQuery => this.$parent_elem.find(`.${this.topic_list_class_name}`);
+        const find = (): JQuery => this.$stream_li.find(`.${this.topic_list_class_name}`);
 
         vdom.update(replace_content, find, new_dom, this.prior_dom);
 
@@ -367,14 +373,19 @@ export class TopicListWidget {
     }
 
     is_empty(): boolean {
-        const $topic_list = this.$parent_elem.find(`.${this.topic_list_class_name}`);
+        const $topic_list = this.$stream_li.find(`.${this.topic_list_class_name}`);
         return !$topic_list.hasClass("topic-list-has-topics");
     }
 }
 
 function filter_topics_left_sidebar(topic_names: string[]): string[] {
     const search_term = get_left_sidebar_topic_search_term();
+    const stream_id = active_stream_id();
+    if (stream_id === undefined) {
+        return topic_names;
+    }
     return topic_list_data.filter_topics_by_search_term(
+        stream_id,
         topic_names,
         search_term,
         get_typeahead_search_pills_syntax(),
@@ -382,8 +393,8 @@ function filter_topics_left_sidebar(topic_names: string[]): string[] {
 }
 
 export class LeftSidebarTopicListWidget extends TopicListWidget {
-    constructor($parent_elem: JQuery, my_stream_id: number) {
-        super($parent_elem, my_stream_id, filter_topics_left_sidebar);
+    constructor($stream_li: JQuery, my_stream_id: number) {
+        super($stream_li, my_stream_id, filter_topics_left_sidebar);
     }
 
     override build(spinner = false): void {
@@ -426,7 +437,7 @@ export function get_stream_li(): JQuery | undefined {
         return undefined;
     }
 
-    const $stream_li = widgets[0].get_parent();
+    const $stream_li = widgets[0].get_stream_li();
     return $stream_li;
 }
 
@@ -574,14 +585,21 @@ export function setup_topic_search_typeahead(): void {
             const stream_id = active_stream_id();
             assert(stream_id !== undefined);
 
-            if (!stream_topic_history.stream_has_locally_available_resolved_topics(stream_id)) {
-                return [];
-            }
-            const $pills = $("#left-sidebar-filter-topic-input .pill");
-            if ($pills.length > 0) {
-                return [];
-            }
-            return [...topic_filter_pill.filter_options];
+            const pills = topic_filter_pill_widget!.items();
+            const current_syntaxes = new Set(pills.map((pill) => pill.syntax));
+            const query = $("#topic_filter_query").text().trim();
+            return topic_filter_pill.filter_options.filter((option) => {
+                if (current_syntaxes.has(option.syntax)) {
+                    return false;
+                }
+                if (
+                    option.match_prefix_required &&
+                    !query.startsWith(option.match_prefix_required)
+                ) {
+                    return false;
+                }
+                return true;
+            });
         },
         item_html(item: TopicFilterPill) {
             return typeahead_helper.render_topic_state(item.label);

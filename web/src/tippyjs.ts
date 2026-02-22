@@ -191,7 +191,7 @@ export function initialize(): void {
     });
 
     tippy.delegate("body", {
-        target: "#subscription_overlay .subscription_settings .sub-stream-name, #groups_overlay .user_group_settings_wrapper .group-name",
+        target: "#subscription_overlay .subscription_settings .sub-stream-name, #groups_overlay .user_group_settings_wrapper .group-name, #user_group_settings_title .selected-group-name",
         delay: LONG_HOVER_DELAY,
         appendTo: () => document.body,
         placement: "top",
@@ -307,7 +307,6 @@ export function initialize(): void {
 
     tippy.delegate("body", {
         target: [
-            "#scroll-to-bottom-button-clickable-area",
             ".spectator_narrow_login_button",
             ".error-icon-message-recipient .zulip-icon",
             "#personal-menu-dropdown .status-circle",
@@ -319,6 +318,7 @@ export function initialize(): void {
 
     tippy.delegate("body", {
         target: [
+            "#scroll-to-bottom-button-clickable-area",
             "#compose_close",
             ".expand-composebox-button",
             ".collapse-composebox-button",
@@ -1007,6 +1007,17 @@ export function initialize(): void {
             }
             return false;
         },
+        appendTo: () => document.body,
+        onHidden(instance) {
+            instance.destroy();
+        },
+    });
+
+    tippy.delegate("body", {
+        target: ".reset-user-setting-to-default",
+        // Disable trigger on focus, to avoid displaying the tooltip
+        // after the confirmation modal closes.
+        trigger: "mouseenter",
         appendTo: () => document.body,
         onHidden(instance) {
             instance.destroy();

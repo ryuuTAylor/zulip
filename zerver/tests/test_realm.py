@@ -45,6 +45,8 @@ from zerver.actions.realm_settings import (
 from zerver.actions.streams import do_deactivate_stream, merge_streams
 from zerver.actions.user_groups import check_add_user_group
 from zerver.actions.user_settings import do_change_avatar_fields
+from zerver.lib.cache import cache_delete, realm_rendered_description_cache_key
+from zerver.lib.markdown import version as markdown_version
 from zerver.lib.realm_description import get_realm_rendered_description, get_realm_text_description
 from zerver.lib.send_email import send_future_email
 from zerver.lib.streams import create_stream_if_needed
@@ -73,6 +75,7 @@ from zerver.models import (
 from zerver.models.groups import SystemGroups
 from zerver.models.realm_audit_logs import AuditLogEventType
 from zerver.models.realms import get_realm
+from zerver.models.scheduled_jobs import ScheduledMessage
 from zerver.models.streams import get_stream
 from zerver.models.users import get_system_bot, get_user_profile_by_id
 
@@ -212,9 +215,12 @@ class RealmTest(ZulipTestCase):
             event,
             dict(
                 type="realm",
-                op="update",
-                property="description",
-                value=new_description,
+                op="update_dict",
+                property="default",
+                data={
+                    "description": new_description,
+                    "rendered_description": f"<p>{new_description}</p>",
+                },
             ),
         )
 
@@ -233,9 +239,12 @@ class RealmTest(ZulipTestCase):
             event,
             dict(
                 type="realm",
-                op="update",
-                property="description",
-                value=new_description,
+                op="update_dict",
+                property="default",
+                data={
+                    "description": new_description,
+                    "rendered_description": f"<p>{new_description}</p>",
+                },
             ),
         )
 
@@ -282,7 +291,7 @@ class RealmTest(ZulipTestCase):
         realm.refresh_from_db()
         self.assertFalse(realm.invite_required)
 
-    def test_realm_convert_demo_realm(self) -> None:
+    def test_realm_convert_demo_organization_errors(self) -> None:
         data = dict(string_id="coolrealm")
 
         self.login("iago")
@@ -293,30 +302,59 @@ class RealmTest(ZulipTestCase):
         result = self.client_patch("/json/realm", data)
         self.assert_json_error(result, "Must be a demo organization.")
 
-        realm = get_realm("zulip")
-        realm.demo_organization_scheduled_deletion_date = timezone_now() + timedelta(days=30)
-        realm.save()
+    def test_realm_convert_demo_organization_success(self) -> None:
+        result = self.submit_demo_creation_form()
+        realm = Realm.objects.filter(
+            demo_organization_scheduled_deletion_date__isnull=False
+        ).latest("date_created")
+        self.assertEqual(result.status_code, 302)
+        self.assertTrue(
+            result["Location"].startswith(
+                f"http://{realm.string_id}.testserver/accounts/login/subdomain"
+            )
+        )
+        self.assertIsNotNone(realm.demo_organization_scheduled_deletion_date)
+
+        result = self.client_get(result["Location"], subdomain=realm.string_id)
+        self.assertEqual(result.status_code, 302)
+        self.assertEqual(result["Location"], f"http://{realm.string_id}.testserver")
+
+        demo_string_id = realm.string_id
+        demo_owner_account = realm.get_first_human_user()
+        assert demo_owner_account is not None
+        self.assert_logged_in_user_id(demo_owner_account.id)
+        self.assertEqual(demo_owner_account.delivery_email, "")
+
+        # Confirm there is a scheduled message reminder about automated
+        # demo organization deletion.
+        demo_deletion_reminder = ScheduledMessage.objects.filter(
+            realm_id=realm.id,
+            sender__email="notification-bot@zulip.com",
+        ).latest("id")
+        self.assertTrue(
+            demo_deletion_reminder.content.startswith("As a reminder, this [demo organization]")
+        )
+        self.assertIn("will be automatically deleted on <time", demo_deletion_reminder.content)
+        demo_deletion_reminder_id = demo_deletion_reminder.id
 
         # Demo organization owner must have added an email before converting.
-        desdemona = self.example_user("desdemona")
-        desdemona.delivery_email = ""
-        desdemona.save()
-        result = self.client_patch("/json/realm", data)
+        data = dict(string_id="coolrealm")
+        result = self.client_patch("/json/realm", data, subdomain=realm.subdomain)
         self.assert_json_error(result, "Configure owner account email address.")
 
-        desdemona.delivery_email = "desdemona@zulip.com"
-        desdemona.save()
+        demo_owner_account.delivery_email = "demo-owner-test@zulip.com"
+        demo_owner_account.save()
 
         # Subdomain must be available to convert demo organization.
         data = dict(string_id="lear")
-        result = self.client_patch("/json/realm", data)
+        result = self.client_patch("/json/realm", data, subdomain=realm.subdomain)
         self.assert_json_error(
             result, "Subdomain is already in use. Please choose a different one."
         )
 
         # Now try to change the string_id to something available.
         data = dict(string_id="coolrealm")
-        result = self.client_patch("/json/realm", data)
+        result = self.client_patch("/json/realm", data, subdomain=realm.subdomain)
         self.assert_json_success(result)
         json = orjson.loads(result.content)
         self.assertEqual(json["realm_uri"], "http://coolrealm.testserver")
@@ -326,21 +364,25 @@ class RealmTest(ZulipTestCase):
         self.assertEqual(realm.string_id, data["string_id"])
 
         realm_audit_log = RealmAuditLog.objects.filter(
-            event_type=AuditLogEventType.REALM_SUBDOMAIN_CHANGED, acting_user=desdemona
+            event_type=AuditLogEventType.REALM_SUBDOMAIN_CHANGED, acting_user=demo_owner_account
         ).last()
         assert realm_audit_log is not None
         expected_extra_data = {
-            RealmAuditLog.OLD_VALUE: "zulip",
+            RealmAuditLog.OLD_VALUE: demo_string_id,
             RealmAuditLog.NEW_VALUE: "coolrealm",
             "was_demo_organization": True,
         }
         self.assertEqual(realm_audit_log.extra_data, expected_extra_data)
-        self.assertEqual(realm_audit_log.acting_user, desdemona)
+        self.assertEqual(realm_audit_log.acting_user, demo_owner_account)
 
-        placeholder_realm = get_realm("zulip")
+        placeholder_realm = get_realm(demo_string_id)
         self.assertTrue(placeholder_realm.deactivated)
         self.assertEqual(placeholder_realm.deactivated_redirect, realm.url)
-        self.assertIsNotNone(placeholder_realm.scheduled_deletion_date)
+
+        # Check that scheduled reminder about demo organization automated
+        # deletion has been deleted.
+        with self.assertRaises(ScheduledMessage.DoesNotExist):
+            ScheduledMessage.objects.get(id=demo_deletion_reminder_id)
 
     def test_realm_name_length(self) -> None:
         new_name = "A" * (Realm.MAX_REALM_NAME_LENGTH + 1)
@@ -420,7 +462,6 @@ class RealmTest(ZulipTestCase):
         placeholder_realm = get_realm("zulip")
         self.assertTrue(placeholder_realm.deactivated)
         self.assertEqual(placeholder_realm.deactivated_redirect, user.realm.url)
-        self.assertIsNone(placeholder_realm.scheduled_deletion_date)
 
         realm_audit_log = RealmAuditLog.objects.filter(
             event_type=AuditLogEventType.REALM_SUBDOMAIN_CHANGED, acting_user=iago
@@ -453,8 +494,9 @@ class RealmTest(ZulipTestCase):
         rendered_description = get_realm_rendered_description(realm)
         text_description = get_realm_text_description(realm)
 
-        realm.description = "New description"
-        realm.save(update_fields=["description"])
+        do_set_realm_property(
+            realm, "description", "New description", acting_user=self.example_user("iago")
+        )
 
         new_rendered_description = get_realm_rendered_description(realm)
         self.assertNotEqual(rendered_description, new_rendered_description)
@@ -463,6 +505,53 @@ class RealmTest(ZulipTestCase):
         new_text_description = get_realm_text_description(realm)
         self.assertNotEqual(text_description, new_text_description)
         self.assertEqual(realm.description, new_text_description)
+
+    def test_realm_rendered_description(self) -> None:
+        realm = get_realm("zulip")
+
+        # Verify that rendered_description field is updated.
+        new_description = (
+            "# Test Description\n\nWith **formatting** and a [link](https://example.com)"
+        )
+        do_set_realm_property(realm, "description", new_description, acting_user=None)
+
+        rendered_description = realm.rendered_description
+        assert rendered_description is not None
+        self.assertIn("<strong>formatting</strong>", rendered_description)
+        self.assertNotIn("**formatting**", rendered_description)
+        self.assertIn("<h1>Test Description</h1>", rendered_description)
+        self.assertIn('<a href="https://example.com"', rendered_description)
+        self.assertEqual(get_realm_rendered_description(realm), rendered_description)
+        self.assertEqual(realm.rendered_description_version, markdown_version)
+
+        # Check rendered_description field when description is empty string.
+        do_set_realm_property(realm, "description", "", acting_user=None)
+
+        realm.refresh_from_db()
+        self.assertEqual(realm.rendered_description, "")
+        result = get_realm_rendered_description(realm)
+        self.assertEqual(result, "<p>The coolest place in the universe.</p>")
+
+        # Check the case when description is set but rendered_description is None
+        do_set_realm_property(realm, "description", new_description, acting_user=None)
+
+        realm.rendered_description = None
+        realm.rendered_description_version = None
+        realm.save(update_fields=["rendered_description", "rendered_description_version"])
+        self.assertEqual(realm.description, new_description)
+
+        # Clear the cache to force re-rendering
+        cache_delete(realm_rendered_description_cache_key(realm))
+
+        result = get_realm_rendered_description(realm)
+
+        realm.refresh_from_db()
+        self.assertIn("<strong>formatting</strong>", result)
+        self.assertNotIn("**formatting**", result)
+        self.assertIn("<h1>Test Description</h1>", result)
+        self.assertIn('<a href="https://example.com"', result)
+        self.assertEqual(result, realm.rendered_description)
+        self.assertEqual(realm.rendered_description_version, markdown_version)
 
     def test_do_deactivate_realm_on_deactivated_realm(self) -> None:
         """Ensure early exit is working in realm deactivation"""
@@ -1284,6 +1373,60 @@ class RealmTest(ZulipTestCase):
         self.assertEqual(
             get_realm("zulip").video_chat_provider,
             zoom_server_to_server_provider_id,
+        )
+
+        constructor_groups_provider_id = Realm.VIDEO_CHAT_PROVIDERS["constructor_groups"]["id"]
+        req = {"video_chat_provider": f"{constructor_groups_provider_id}"}
+        with self.settings(CONSTRUCTOR_GROUPS_URL=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {constructor_groups_provider_id}"
+            )
+
+        with self.settings(CONSTRUCTOR_GROUPS_ACCESS_KEY=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {constructor_groups_provider_id}"
+            )
+
+        with self.settings(CONSTRUCTOR_GROUPS_SECRET_KEY=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {constructor_groups_provider_id}"
+            )
+
+        result = self.client_patch("/json/realm", req)
+        self.assert_json_success(result)
+        self.assertEqual(
+            get_realm("zulip").video_chat_provider,
+            constructor_groups_provider_id,
+        )
+
+        nextcloud_talk_provider_id = Realm.VIDEO_CHAT_PROVIDERS["nextcloud_talk"]["id"]
+        req = {"video_chat_provider": f"{nextcloud_talk_provider_id}"}
+        with self.settings(NEXTCLOUD_SERVER=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {nextcloud_talk_provider_id}"
+            )
+
+        with self.settings(NEXTCLOUD_TALK_USERNAME=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {nextcloud_talk_provider_id}"
+            )
+
+        with self.settings(NEXTCLOUD_TALK_PASSWORD=None):
+            result = self.client_patch("/json/realm", req)
+            self.assert_json_error(
+                result, f"Invalid video_chat_provider {nextcloud_talk_provider_id}"
+            )
+
+        result = self.client_patch("/json/realm", req)
+        self.assert_json_success(result)
+        self.assertEqual(
+            get_realm("zulip").video_chat_provider,
+            nextcloud_talk_provider_id,
         )
 
     def test_data_deletion_schedule_when_deactivating_realm(self) -> None:
@@ -2228,6 +2371,7 @@ class RealmAPITest(ZulipTestCase):
             move_messages_within_stream_limit_seconds=[1000, 1100, 1200],
             move_messages_between_streams_limit_seconds=[1000, 1100, 1200],
             topics_policy=Realm.REALM_TOPICS_POLICY_TYPES,
+            default_avatar_source=["G", "J"],
         )
 
         vals = test_values.get(name)

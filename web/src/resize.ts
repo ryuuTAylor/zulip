@@ -25,7 +25,6 @@ export function get_stream_filters_max_height(): number {
         Number.parseInt($("#left-sidebar").css("paddingTop"), 10) -
         (is_search_visible ? ($left_sidebar_search.outerHeight(true) ?? 0) : 0) -
         ($("#left-sidebar-navigation-area").not(".hidden-by-filters").outerHeight(true) ?? 0) -
-        ($("#direct-messages-section-header").not(".hidden-by-filters").outerHeight(true) ?? 0) -
         GAP;
 
     // Don't let us crush the stream sidebar completely out of view
@@ -207,9 +206,9 @@ export function update_recent_view(): void {
     const num_avatars_narrow_window = 2;
     const num_avatars_max = 4;
     if (recent_view_filters_width < media_breakpoints_num.md) {
-        $(":root").css("--recent-view-max-avatars", num_avatars_narrow_window);
+        $(":root").css("--recent-view-max-avatars", `${num_avatars_narrow_window}`);
     } else {
-        $(":root").css("--recent-view-max-avatars", num_avatars_max);
+        $(":root").css("--recent-view-max-avatars", `${num_avatars_max}`);
     }
 }
 

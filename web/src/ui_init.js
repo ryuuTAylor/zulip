@@ -563,7 +563,7 @@ export async function initialize_everything(state_data) {
     });
     alert_words.initialize(state_data.alert_words);
     saved_snippets.initialize(state_data.saved_snippets);
-    emojisets.initialize();
+    emojisets.initialize(user_settings.emojiset);
     scroll_bar.initialize();
     message_viewport.initialize();
     banners.initialize();
@@ -702,12 +702,12 @@ export async function initialize_everything(state_data) {
         }
     });
     activity_ui.initialize({
-        narrow_by_email(email) {
+        narrow_by_user_id(user_id) {
             message_view.show(
                 [
                     {
                         operator: "dm",
-                        operand: email,
+                        operand: [user_id],
                     },
                 ],
                 {trigger: "sidebar"},
@@ -775,11 +775,11 @@ export async function initialize_everything(state_data) {
 }
 
 function show_try_zulip_modal() {
-    const html_body = render_try_zulip_modal();
+    const modal_content_html = render_try_zulip_modal();
     dialog_widget.launch({
-        text_heading: i18n.$t({defaultMessage: "Welcome to the Zulip development community!"}),
-        html_body,
-        html_submit_button: i18n.$t({defaultMessage: "Let's go!"}),
+        modal_title_text: i18n.$t({defaultMessage: "Welcome to the Zulip development community!"}),
+        modal_content_html,
+        modal_submit_button_text: i18n.$t({defaultMessage: "Let's go!"}),
         on_click() {
             // Do nothing
         },

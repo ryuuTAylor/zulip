@@ -298,6 +298,7 @@ export function dispatch_normal_event(event) {
                 can_set_topics_policy_group: noop,
                 can_summarize_topics_group: noop,
                 create_multiuse_invite_group: noop,
+                default_avatar_source: noop,
                 default_code_block_language: noop,
                 default_language: noop,
                 description: noop,
@@ -731,15 +732,11 @@ export function dispatch_normal_event(event) {
                     break;
                 case "delete":
                     for (const stream_id of event.stream_ids) {
-                        const was_subscribed = sub_store.get(stream_id).subscribed;
                         stream_data.delete_sub(stream_id);
                         stream_settings_ui.remove_stream(stream_id);
-                        if (was_subscribed) {
-                            stream_list.remove_sidebar_row(stream_id);
-                            if (stream_id === compose_state.selected_recipient_id) {
-                                compose_state.set_selected_recipient_id("");
-                                compose_recipient.on_compose_select_recipient_update();
-                            }
+                        if (stream_id === compose_state.selected_recipient_id) {
+                            compose_state.set_selected_recipient_id("");
+                            compose_recipient.on_compose_select_recipient_update();
                         }
                         settings_streams.update_default_streams_table();
                         stream_data.remove_default_stream(stream_id);

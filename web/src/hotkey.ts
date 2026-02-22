@@ -28,6 +28,7 @@ import * as hash_util from "./hash_util.ts";
 import * as hashchange from "./hashchange.ts";
 import {$t} from "./i18n.ts";
 import * as inbox_ui from "./inbox_ui.ts";
+import * as inbox_util from "./inbox_util.ts";
 import * as lightbox from "./lightbox.ts";
 import * as list_util from "./list_util.ts";
 import * as message_actions_popover from "./message_actions_popover.ts";
@@ -757,20 +758,35 @@ export function process_tab_key(): boolean {
     // Returns true if we handled it, false if the browser should.
     // TODO: See if browsers like Safari can now handle tabbing correctly
     // without our intervention.
+    const focused_element = document.activeElement;
 
-    let $message_edit_form;
+    if (!(focused_element instanceof HTMLElement)) {
+        return false;
+    }
 
-    const $focused_message_edit_content = $(".message_edit_content:focus");
-    if ($focused_message_edit_content.length > 0) {
-        $message_edit_form = $focused_message_edit_content.closest(".message_edit_form");
+    const $focused_element = $(focused_element);
+    const $message_edit_form = $focused_element.closest(".message_edit_form");
+
+    if ($message_edit_form.length === 0) {
+        return false;
+    }
+
+    const form_element = $message_edit_form[0];
+    if (!form_element) {
+        return false;
+    }
+
+    // 1. Content -> Save
+    if ($focused_element.hasClass("message_edit_content")) {
+        const $message_edit_form = $focused_element.closest(".message_edit_form");
         // Open message edit forms either have a save button or a close button, but not both.
         $message_edit_form.find(".message_edit_save,.message_edit_close").trigger("focus");
         return true;
     }
 
-    const $focused_message_edit_save = $(".message_edit_save:focus");
-    if ($focused_message_edit_save.length > 0) {
-        $message_edit_form = $focused_message_edit_save.closest(".message_edit_form");
+    // 2. Save -> Cancel
+    if ($focused_element.hasClass("message_edit_save")) {
+        const $message_edit_form = $focused_element.closest(".message_edit_form");
         $message_edit_form.find(".message_edit_cancel").trigger("focus");
         return true;
     }
@@ -786,8 +802,13 @@ export function process_shift_tab_key(): boolean {
     // Returns true if we handled it, false if the browser should.
     // TODO: See if browsers like Safari can now handle tabbing correctly
     // without our intervention.
+    const focused_element = document.activeElement;
 
-    if ($("#compose-send-button").is(":focus")) {
+    if (!(focused_element instanceof HTMLElement)) {
+        return false;
+    }
+
+    if (focused_element.id === "compose-send-button") {
         // Shift-Tab: go back to content textarea and restore
         // cursor position.
         compose_textarea.restore_compose_cursor();
@@ -1208,6 +1229,15 @@ function process_hotkey(e: JQuery.KeyDownEvent, hotkey: Hotkey): boolean {
             browser_history.go_to_location("#recent");
             return true;
         case "open_inbox":
+            // Focus search if already in (non-channel) inbox view.
+            if (
+                inbox_util.is_visible() &&
+                !inbox_util.is_channel_view() &&
+                !inbox_ui.is_search_focused()
+            ) {
+                inbox_ui.focus_inbox_search();
+                return true;
+            }
             browser_history.go_to_location("#inbox");
             return true;
         case "open_starred_message_view":
@@ -1242,6 +1272,12 @@ function process_hotkey(e: JQuery.KeyDownEvent, hotkey: Hotkey): boolean {
                 }
             }
             if (inbox_ui.is_in_focus()) {
+                // Focus search if already in channel view.
+                if (inbox_util.is_channel_view()) {
+                    inbox_ui.focus_inbox_search();
+                    return true;
+                }
+
                 const msg = inbox_ui.get_focused_row_message();
                 if (msg?.msg_type === "stream") {
                     list_of_channel_topics_channel_id = msg.stream_id;

@@ -18,7 +18,6 @@ import * as compose_recipient from "./compose_recipient.ts";
 import * as compose_state from "./compose_state.ts";
 import * as condense from "./condense.ts";
 import * as feedback_widget from "./feedback_widget.ts";
-import type {FetchStatus} from "./fetch_status.ts";
 import {Filter} from "./filter.ts";
 import * as hash_parser from "./hash_parser.ts";
 import * as hash_util from "./hash_util.ts";
@@ -102,7 +101,7 @@ export function changehash(
     trigger: string,
     remove_current_hash_from_history = false,
 ): void {
-    if (browser_history.state.changing_hash || remove_current_hash_from_history) {
+    if (browser_history.state.changing_hash) {
         // If we retargeted the narrow operation because a message was moved,
         // we want to have the current narrow hash in the browser history.
         if (trigger === "retarget message location") {
@@ -112,15 +111,26 @@ export function changehash(
     }
     message_viewport.stop_auto_scrolling();
 
-    if (trigger === "retarget topic location") {
-        // It is important to use `replaceState` rather than `replace`
-        // here for the `back` button to work; we don't want to use
-        // any metadata potentially stored by
-        // update_current_history_state_data associated with an old
-        // URL for the target conversation, and conceptually we want
-        // to replace the inaccurate/old URL for the conversation with
-        // the current/corrected value.
-        window.history.replaceState(null, "", newhash);
+    if (remove_current_hash_from_history) {
+        switch (trigger) {
+            case "retarget topic location":
+            case "stream/topic change":
+                // It is important to use `replaceState` rather than `replace`
+                // here for the `back` button to work; we don't want to use
+                // any metadata potentially stored by
+                // update_current_history_state_data associated with an old
+                // URL for the target conversation, and conceptually we want
+                // to replace the inaccurate/old URL for the conversation with
+                // the current/corrected value.
+                window.history.replaceState(null, "", newhash);
+                break;
+            case "retarget message location":
+            case "old_unreads_missing":
+                // We want to preserve the metadata associated with the current
+                // narrow in the browser history, so we use `location.replace` here.
+                window.location.replace(newhash);
+                break;
+        }
     } else {
         browser_history.set_hash(newhash);
     }
@@ -256,20 +266,8 @@ function create_and_update_message_list(
     // the current message list as we are trying to emulate the `hashchange`
     // workflow we have which calls `message_view.show` after hash is updated.
     if (opts.change_hash) {
-        let remove_current_hash_from_history = false;
-        let trigger = opts.trigger ?? "unknown";
-        if (opts.trigger === "old_unreads_missing") {
-            // We are not navigating user to a different place but want to
-            // keep user at the same place but avoid marking messages as read.
-            // Assuming current narrow doesn't have a `near` term,
-            // we replace the current history entry with
-            // the new hash which has a `near` term.
-            assert(!narrow_state.filter()!.has_operator("near"));
-            assert(msg_list.data.filter.has_operator("near"));
-            remove_current_hash_from_history = true;
-            trigger = "retarget message location";
-        }
-
+        const remove_current_hash_from_history = opts.remove_current_hash_from_history ?? false;
+        const trigger = opts.trigger ?? "unknown";
         update_hash_to_match_filter(filter, trigger, remove_current_hash_from_history);
         opts.show_more_topics = browser_history.get_current_state_show_more_topics() ?? false;
     }
@@ -378,7 +376,12 @@ export function try_rendering_locally_for_same_narrow(
     }
 
     message_lists.current.data.filter = filter;
-    update_hash_to_match_filter(filter, "retarget message location");
+    const remove_current_hash_from_history = opts.remove_current_hash_from_history ?? false;
+    update_hash_to_match_filter(
+        filter,
+        "retarget message location",
+        remove_current_hash_from_history,
+    );
     message_view_header.render_title_area();
     return true;
 }
@@ -392,6 +395,7 @@ export type ShowMessageViewOpts = {
     then_select_id?: number | undefined;
     then_select_offset?: number | undefined;
     show_more_topics?: boolean;
+    remove_current_hash_from_history?: boolean;
 };
 
 export function get_id_info(): TargetMessageIdInfo {
@@ -796,7 +800,12 @@ export let show = (raw_terms: NarrowTerm[], show_opts: ShowMessageViewOpts): voi
                             // We've already adjusted our filter via
                             // filter.try_adjusting_for_moved_with_target, and
                             // should update the URL hash accordingly.
-                            update_hash_to_match_filter(filter, "retarget topic location");
+                            const remove_current_hash_from_history = true;
+                            update_hash_to_match_filter(
+                                filter,
+                                "retarget topic location",
+                                remove_current_hash_from_history,
+                            );
                             // Since filter is updated, we need to handle various things
                             // like updating the message view header title, unread banner
                             // based on the updated filter.
@@ -891,8 +900,14 @@ export let show = (raw_terms: NarrowTerm[], show_opts: ShowMessageViewOpts): voi
                         // make sense, and checks like is_conversation_view_with_near do not
                         // handle that combination correctly.
                         terms = terms.filter((term) => term.operator !== "with");
+                        // We are not navigating user to a different place but want to
+                        // keep user at the same place but avoid marking messages as read.
+                        // Assuming current narrow doesn't have a `near` term,
+                        // we replace the current history entry with
+                        // the new hash which has a `near` term.
                         const opts = {
                             trigger: "old_unreads_missing",
+                            remove_current_hash_from_history: true,
                         };
                         show(terms, opts);
                         const new_message_list_id = message_lists.current?.id;
@@ -936,11 +951,11 @@ export function rewire_show(value: typeof show): void {
 
 function navigate_to_anchor_message(opts: {
     anchor: string;
-    fetch_status_shows_anchor_fetched: (fetch_status: FetchStatus) => boolean;
+    is_anchor_fetched: (data: MessageListData) => boolean;
     message_list_data_to_target_message_id: (data: MessageListData) => number;
+    anchor_date?: string | undefined;
 }): void {
-    const {anchor, fetch_status_shows_anchor_fetched, message_list_data_to_target_message_id} =
-        opts;
+    const {anchor, is_anchor_fetched, message_list_data_to_target_message_id, anchor_date} = opts;
     // The function navigates user to the anchor in the current
     // message list. We don't use `message_view.show` here due
     // to following reasons:
@@ -982,10 +997,10 @@ function navigate_to_anchor_message(opts: {
     }
 
     assert(message_lists.current !== undefined);
-    if (fetch_status_shows_anchor_fetched(message_lists.current.data.fetch_status)) {
+    if (is_anchor_fetched(message_lists.current.data)) {
         select_msg_id(message_list_data_to_target_message_id(message_lists.current.data));
         return;
-    } else if (fetch_status_shows_anchor_fetched(all_messages_data.fetch_status)) {
+    } else if (is_anchor_fetched(all_messages_data) && anchor !== "date") {
         // We can load messages into `msg_list_data` but we don't know
         // the fetch status until we contact server. If we are contacting the
         // server, it is better to just fetch the required messages instead
@@ -994,6 +1009,13 @@ function navigate_to_anchor_message(opts: {
         // So, a cheaper check is to see if we have found the anchor in
         // `all_messages_data`, and if we have, we can say `msg_list_data`
         // will also have the anchor (for oldest / newest anchors at least).
+        //
+        // We skip this for date anchor since message_list_data_to_target_message_id
+        // for date anchor heavily relies on has_found_oldest/newest being up-to-date.
+        // When using load_local_messages, we do not copy fetch_status over to
+        // msg_list_data, which causes error in message_list_data_to_target_message_id.
+        // See https://github.com/zulip/zulip/pull/37198#issuecomment-3858015457 for
+        // more details.
         const msg_list_data = new MessageListData({
             filter: message_lists.current.data.filter,
             excludes_muted_topics: message_lists.current.data.excludes_muted_topics,
@@ -1020,37 +1042,65 @@ function navigate_to_anchor_message(opts: {
             select_anchor_using_data(msg_list_data);
         },
         msg_list_data,
+        anchor_date,
     );
 }
 
-export function fast_track_current_msg_list_to_anchor(anchor: string): void {
+export function fast_track_current_msg_list_to_anchor(anchor: string, anchor_date?: string): void {
     assert(message_lists.current !== undefined);
     if (message_lists.current.visibly_empty()) {
         return;
     }
 
-    if (anchor === "oldest") {
-        navigate_to_anchor_message({
-            anchor,
-            fetch_status_shows_anchor_fetched(fetch_status) {
-                return fetch_status.has_found_oldest();
-            },
-            message_list_data_to_target_message_id(msg_list_data) {
-                return msg_list_data.first()!.id;
-            },
-        });
-    } else if (anchor === "newest") {
-        navigate_to_anchor_message({
-            anchor,
-            fetch_status_shows_anchor_fetched(fetch_status) {
-                return fetch_status.has_found_newest();
-            },
-            message_list_data_to_target_message_id(msg_list_data) {
-                return msg_list_data.last()!.id;
-            },
-        });
-    } else {
-        blueslip.error(`Invalid anchor value: ${anchor}`);
+    switch (anchor) {
+        case "oldest": {
+            navigate_to_anchor_message({
+                anchor,
+                is_anchor_fetched(msg_list_data: MessageListData) {
+                    return msg_list_data.fetch_status.has_found_oldest();
+                },
+                message_list_data_to_target_message_id(msg_list_data) {
+                    return msg_list_data.first()!.id;
+                },
+            });
+
+            break;
+        }
+        case "newest": {
+            navigate_to_anchor_message({
+                anchor,
+                is_anchor_fetched(msg_list_data: MessageListData) {
+                    return msg_list_data.fetch_status.has_found_newest();
+                },
+                message_list_data_to_target_message_id(msg_list_data) {
+                    return msg_list_data.last()!.id;
+                },
+            });
+
+            break;
+        }
+        case "date": {
+            if (anchor_date === undefined) {
+                blueslip.error("Missing required argument anchor_date");
+                return;
+            }
+
+            navigate_to_anchor_message({
+                anchor,
+                is_anchor_fetched(msg_list_data: MessageListData) {
+                    return msg_list_data.date_anchor_exists(anchor_date);
+                },
+                message_list_data_to_target_message_id(msg_list_data) {
+                    return msg_list_data.find_date_anchor_message_id(anchor_date)!.id;
+                },
+                anchor_date,
+            });
+
+            break;
+        }
+        default: {
+            blueslip.error(`Invalid anchor value: ${anchor}`);
+        }
     }
 }
 
@@ -1407,9 +1457,7 @@ export function narrow_to_next_pm_string(opts = {}): void {
         return;
     }
 
-    // Hopefully someday we can narrow by user_ids_string instead of
-    // mapping back to emails.
-    const direct_message = people.user_ids_string_to_emails_string(next_direct_message);
+    const direct_message = people.user_ids_string_to_ids_array(next_direct_message);
     assert(direct_message !== undefined);
 
     const filter_expr: NarrowTerm[] = [{operator: "dm", operand: direct_message}];
@@ -1467,8 +1515,6 @@ export function narrow_by_recipient(
     // don't use message_lists.current as it won't work for muted messages or for out-of-narrow links
     const message = message_store.get(target_id);
     assert(message !== undefined);
-    const emails = message.reply_to.split(",");
-    const reply_to = people.sort_emails_by_username(emails);
 
     switch (message.type) {
         case "private":
@@ -1482,7 +1528,16 @@ export function narrow_by_recipient(
                 // in the new view.
                 unread_ops.notify_server_message_read(message);
             }
-            show([{operator: "dm", operand: reply_to.join(",")}], show_opts);
+
+            show(
+                [
+                    {
+                        operator: "dm",
+                        operand: people.user_ids_string_to_ids_array(message.to_user_ids),
+                    },
+                ],
+                show_opts,
+            );
             break;
 
         case "stream":
@@ -1537,16 +1592,14 @@ export function to_compose_target(): void {
     }
 
     if (compose_state.get_message_type() === "private") {
-        const recipient_string = compose_state.private_message_recipient_emails();
-        const emails = util.extract_pm_recipients(recipient_string);
-        const invalid = emails.filter((email) => !people.is_valid_email_for_compose(email));
+        const recipient_ids = compose_state.private_message_recipient_ids();
         // If there are no recipients or any recipient is
         // invalid, narrow to your direct message feed.
-        if (emails.length === 0 || invalid.length > 0) {
+        if (recipient_ids.length === 0 || !people.is_valid_user_ids(recipient_ids)) {
             show([{operator: "is", operand: "dm"}], opts);
             return;
         }
-        show([{operator: "dm", operand: util.normalize_recipients(recipient_string)}], opts);
+        show([{operator: "dm", operand: recipient_ids}], opts);
     }
 }
 
@@ -1606,7 +1659,10 @@ export function narrow_to_message_near(message: Message, trigger: string): void 
         case "private":
             show(
                 [
-                    {operator: "dm", operand: message.reply_to},
+                    {
+                        operator: "dm",
+                        operand: people.user_ids_string_to_ids_array(message.to_user_ids),
+                    },
                     {operator: "near", operand: String(message.id)},
                 ],
                 {trigger},
