@@ -29,6 +29,7 @@ from zerver.models.messages import ArchiveTransaction as ArchiveTransaction
 from zerver.models.messages import Attachment as Attachment
 from zerver.models.messages import ImageAttachment as ImageAttachment
 from zerver.models.messages import Message as Message
+from zerver.models.message_templates import MessageTemplate as MessageTemplate
 from zerver.models.messages import OnboardingUserMessage as OnboardingUserMessage
 from zerver.models.messages import Reaction as Reaction
 from zerver.models.messages import SubMessage as SubMessage
