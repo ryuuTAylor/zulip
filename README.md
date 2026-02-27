@@ -7,6 +7,7 @@ source projects][rust-case-study], and thousands of other organizations use
 Zulip every day. Zulip is the only [modern team chat app][features] that is
 designed for both live and asynchronous conversations.
 
+
 Zulip is built by a distributed community of developers from all around the
 world, with 99+ people who have each contributed 100+ commits. With
 over 1,500 contributors merging over 500 commits a month, Zulip is the
