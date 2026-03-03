@@ -143,12 +143,7 @@ exports.fixtures = {
             size: 4096,
             path_id: "path_id",
             create_time: fake_now,
-            messages: [
-                {
-                    id: 1000,
-                    date_sent: fake_now,
-                },
-            ],
+            message_ids: [1000],
         },
         upload_space_used: 90000,
     },
@@ -411,6 +406,13 @@ exports.fixtures = {
         op: "update",
         property: "invite_required",
         value: false,
+    },
+
+    realm__update__media_preview_size: {
+        type: "realm",
+        op: "update",
+        property: "media_preview_size",
+        value: 150,
     },
 
     realm__update__moderation_request_channel_id: {

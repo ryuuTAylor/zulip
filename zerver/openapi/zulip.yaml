@@ -1704,7 +1704,7 @@ paths:
                                       "path_id": "2/ce/2Xpnnwgh8JWKxBXtTfD6BHKV/zulip.txt",
                                       "size": 6,
                                       "create_time": 1594825414,
-                                      "messages": [],
+                                      "message_ids": [],
                                     },
                                   "upload_space_used": 6,
                                   "id": 0,
@@ -1745,7 +1745,7 @@ paths:
                                       "path_id": "2/ce/2Xpnnwgh8JWKxBXtTfD6BHKV/zulip.txt",
                                       "size": 6,
                                       "create_time": 1594825414,
-                                      "messages": [],
+                                      "message_ids": [],
                                     },
                                   "upload_space_used": 6,
                                   "id": 0,
@@ -4007,6 +4007,25 @@ paths:
                                         type: integer
                                         description: |
                                           The ID of the linkifier.
+                                      example_input:
+                                        type: string
+                                        nullable: true
+                                        description: |
+                                          An example input string that matches the linkifier's pattern.
+                                          This is required for reverse linkifiers.
+
+                                          **Changes**: New in Zulip 12.0 (feature level 471).
+                                      reverse_template:
+                                        type: string
+                                        nullable: true
+                                        description: |
+                                          A simple template using `{variable}` for variables that can
+                                          be used to generate the Markdown linkifier syntax, given a
+                                          URL matching the URL template.
+
+                                          `{{ "{{/}}" }}` can be used for literal `{/}` characters.
+
+                                          **Changes**: New in Zulip 12.0 (feature level 471).
                               example:
                                 {
                                   "type": "realm_linkifiers",
@@ -4016,6 +4035,8 @@ paths:
                                         "pattern": "#(?P<id>[123])",
                                         "url_template": "https://realm.com/my_realm_filter/{id}",
                                         "id": 1,
+                                        "example_input": "#1234",
+                                        "reverse_template": "#{id}",
                                       },
                                     ],
                                   "id": 0,
@@ -5240,6 +5261,22 @@ paths:
                                       type: string
                                       description: |
                                         The URL of the organization's [profile icon](/help/create-your-organization-profile).
+                                    media_preview_size:
+                                      type: integer
+                                      enum:
+                                        - 100
+                                        - 150
+                                        - 200
+                                      description: |
+                                        The organization's policy for the size of image and video
+                                        thumbnails in messages, expressed as a percentage of the
+                                        default height. Currently, only certain values are permitted.
+
+                                        - `100`: 100% height (the default).
+                                        - `150`: 150% height.
+                                        - `200`: 200% height.
+
+                                        **Changes**: New in Zulip 12.0 (feature level 469).
                                     inline_image_preview:
                                       type: boolean
                                       description: |
@@ -5654,7 +5691,7 @@ paths:
                                         This organization's configured custom message for Welcome Bot
                                         to send to new user accounts, in Zulip Markdown format.
 
-                                        Maximum length is 8000 characters.
+                                        Maximum length is 8000 Unicode code points.
 
                                         **Changes**: New in Zulip 11.0 (feature level 416).
                                     zulip_update_announcements_stream_id:
@@ -6667,11 +6704,7 @@ paths:
                               "path_id": "2/ce/DfOkzwdg_IwlrN3myw3KGtiJ/166050.jpg",
                               "size": 571946,
                               "create_time": 1588145417,
-                              "messages":
-                                [
-                                  {"id": 102, "date_sent": 1588145424},
-                                  {"id": 103, "date_sent": 1588145448},
-                                ],
+                              "message_ids": [102, 103],
                             },
                           ],
                         "upload_space_used": 571946,
@@ -10079,7 +10112,7 @@ paths:
                               "path_id": "2/5d/BD5NRptFxPDKY3RUKwhhup8r/1253601-1.jpg",
                               "size": 1339060,
                               "create_time": 1687984706,
-                              "messages": [],
+                              "message_ids": [],
                             },
                           ],
                       }
@@ -10316,7 +10349,7 @@ paths:
                     A short description with additional context about why the current user
                     is reporting the target message for moderation.
 
-                    Clients should limit this string to a maximum length of 1000 characters.
+                    Clients should limit this string to 1000 Unicode code points.
 
                     If the `report_type` parameter is `"other"`, this parameter is required,
                     and its value cannot be an empty string.
@@ -10789,7 +10822,7 @@ paths:
                     The text content of the status message. Sending the empty string
                     will clear the user's status.
 
-                    **Note**: The limit on the size of the message is 60 characters.
+                    **Note**: The limit on the size of the message is 60 Unicode code points.
                   example: on vacation
                 emoji_name:
                   type: string
@@ -11309,6 +11342,47 @@ paths:
 
                       An example JSON error response when the current user is the only
                       organization owner in the organization:
+  /users/me/api_key/regenerate:
+    post:
+      operationId: regenerate-api-key
+      summary: Regenerate your API key
+      tags: ["users"]
+      description: |
+        !!! warn ""
+
+             **Note**: Users should treat their Zulip API key as
+             [carefully as they would their password](/help/protect-your-account).
+
+        Generate a new API key for the user making the request.
+
+        Changing a user's API key will immediately log them out of Zulip
+        on devices registered for [mobile push notifications][mobile-push].
+
+        [mobile-push]: https://zulip.readthedocs.io/en/latest/production/mobile-push-notifications.html
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      api_key:
+                        type: string
+                        description: The new API key for the user.
+                    required:
+                      - api_key
+                    example:
+                      {
+                        "result": "success",
+                        "msg": "",
+                        "api_key": "a1b2c3d4e5f6g7h8i9j0",
+                      }
   /users/me/alert_words:
     get:
       operationId: get-alert-words
@@ -11792,7 +11866,7 @@ paths:
                     The text content of the status message. Sending the empty string
                     will clear the user's status.
 
-                    **Note**: The limit on the size of the message is 60 characters.
+                    **Note**: The limit on the size of the message is 60 Unicode code points.
                   example: on vacation
                 away:
                   deprecated: true
@@ -13168,6 +13242,36 @@ paths:
                         description: |
                           The ID of the newly registered device.
                     example: {"msg": "", "device_id": 2, "result": "success"}
+  /remove_client_device:
+    post:
+      operationId: remove-client-device
+      summary: Remove a registered device
+      tags: ["mobile"]
+      description: |
+        Mobile devices use this endpoint to remove their device record
+        registered using [`POST /register_client_device`](/api/register-client-device)
+        when the user logs out.
+
+        This endpoint is currently not useful for clients other than mobile.
+
+        **Changes**: New in Zulip 12.0 (feature level 470).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                device_id:
+                  description: |
+                    The ID of the device to remove.
+                  type: integer
+                  example: 2
+              required:
+                - device_id
+      responses:
+        "200":
+          $ref: "#/components/responses/SimpleSuccess"
   /user_topics:
     post:
       operationId: update-user-topic
@@ -15487,6 +15591,25 @@ paths:
                               type: integer
                               description: |
                                 The ID of the linkifier.
+                            example_input:
+                              type: string
+                              nullable: true
+                              description: |
+                                An example input string that matches the linkifier's pattern.
+                                This is required for reverse linkifiers.
+
+                                **Changes**: New in Zulip 12.0 (feature level 471).
+                            reverse_template:
+                              type: string
+                              nullable: true
+                              description: |
+                                A simple template using `{variable}` for variables that can
+                                be used to generate the Markdown linkifier syntax, given a
+                                URL matching the URL template.
+
+                                `{{ "{{/}}" }}` can be used for literal `{/}` characters.
+
+                                **Changes**: New in Zulip 12.0 (feature level 471).
                     example:
                       {
                         "msg": "",
@@ -15496,6 +15619,8 @@ paths:
                               "pattern": "#(?P<id>[0-9]+)",
                               "url_template": "https://github.com/zulip/zulip/issues/{id}",
                               "id": 1,
+                              "example_input": "#1234",
+                              "reverse_template": "#{id}",
                             },
                           ],
                         "result": "success",
@@ -15555,6 +15680,31 @@ paths:
                   $ref: "#/components/schemas/LinkifierPattern"
                 url_template:
                   $ref: "#/components/schemas/LinkifierURLTemplate"
+                example_input:
+                  type: string
+                  nullable: true
+                  example: "#1234"
+                  description: |
+                    An example input string that matches the linkifier's pattern.
+                    This is required for reverse linkifiers.
+
+                    **Changes**: New in Zulip 12.0 (feature level 471).
+                reverse_template:
+                  type: string
+                  nullable: true
+                  example: "#{id}"
+                  description: |
+                    A simple template using `{variable}` for variables that can
+                    be used to generate the Markdown linkifier syntax, given a
+                    URL matching the URL template.
+
+                    `{{ "{{/}}" }}` can be used for literal `{/}` characters.
+
+                    Server verifies that variables extracted from example_input using
+                    url_pattern when passed to reverse_template returns example_input
+                    back to us.
+
+                    **Changes**: New in Zulip 12.0 (feature level 471).
               required:
                 - pattern
                 - url_template
@@ -15627,6 +15777,33 @@ paths:
                   $ref: "#/components/schemas/LinkifierPattern"
                 url_template:
                   $ref: "#/components/schemas/LinkifierURLTemplate"
+                example_input:
+                  type: string
+                  nullable: true
+                  example: "#1234"
+                  description: |
+                    An example input string that matches the linkifier's pattern.
+                    This is required for reverse linkifiers. Passing an empty string
+                    will set this field back to null.
+
+                    **Changes**: New in Zulip 12.0 (feature level 471).
+                reverse_template:
+                  type: string
+                  nullable: true
+                  example: "#{id}"
+                  description: |
+                    A simple template using `{variable}` for variables that can
+                    be used to generate the Markdown linkifier syntax, given a
+                    URL matching the URL template. Passing an empty string
+                    will set this field back to null.
+
+                    Server verifies that variables extracted from example_input using
+                    url_pattern when passed to reverse_template returns example_input
+                    back to us.
+
+                    `{{ "{{/}}" }}` can be used for literal `{/}` characters.
+
+                    **Changes**: New in Zulip 12.0 (feature level 471).
               required:
                 - pattern
                 - url_template
@@ -16106,7 +16283,7 @@ paths:
                     Welcome Bot to new users that join the organization via this
                     invitation.
 
-                    Maximum length is 8000 characters.
+                    Maximum length is 8000 Unicode code points.
 
                     Only organization administrators can use this feature; for other
                     users, the value is always `null`.
@@ -16315,7 +16492,7 @@ paths:
                     Welcome Bot to new users that join the organization via this
                     invitation.
 
-                    Maximum length is 8000 characters.
+                    Maximum length is 8000 Unicode code points.
 
                     Only organization administrators can use this feature; for other
                     users, the value is always `null`.
@@ -16551,7 +16728,7 @@ paths:
                     Custom message text, in Zulip Markdown format, to be used for
                     this test message.
 
-                    Maximum length is 8000 characters.
+                    Maximum length is 8000 Unicode code points.
                   type: string
                   maxLength: 8000
                   example: "Welcome to Zulip! We're excited to have you on board."
@@ -17090,7 +17267,7 @@ paths:
                       max_reminder_note_length:
                         type: integer
                         description: |
-                          The maximum allowed length for a reminder note.
+                          The maximum allowed length for a reminder note, in Unicode code points.
 
                           **Changes**: New in Zulip 11.0 (feature level 415).
                       max_stream_name_length:
@@ -19202,6 +19379,24 @@ paths:
                               to be of type integer and did not accept anonymous user groups.
 
                               New in Zulip 8.0 (feature level 209).
+                      realm_media_preview_size:
+                        type: integer
+                        enum:
+                          - 100
+                          - 150
+                          - 200
+                        description: |
+                          Present if `realm` is present in `fetch_event_types`.
+
+                          The organization's policy for the size of image and video
+                          thumbnails in messages, expressed as a percentage of the
+                          default height. Currently, only certain values are permitted.
+
+                          - `100`: 100% height (the default).
+                          - `150`: 150% height.
+                          - `200`: 200% height.
+
+                          **Changes**: New in Zulip 12.0 (feature level 469).
                       realm_inline_image_preview:
                         type: boolean
                         description: |
@@ -25324,6 +25519,55 @@ paths:
                       }
                     description: |
                       An example JSON response when the bot ID is invalid:
+  /bots/{bot_id}/api_key/regenerate:
+    post:
+      operationId: regenerate-bot-api-key
+      summary: Regenerate a bot's API key
+      tags: ["users"]
+      description: |
+        Generate a new API key for a bot user. Only the bot's owner and
+        organization administrators have access to a bot's API key.
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Success.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JsonSuccessBase"
+                  - additionalProperties: false
+                    properties:
+                      result: {}
+                      msg: {}
+                      ignored_parameters_unsupported: {}
+                      api_key:
+                        type: string
+                        description: |
+                          The new API key for the bot.
+                    example:
+                      {
+                        "msg": "",
+                        "result": "success",
+                        "api_key": "hkA04ZYcqXKalvYMA8OeXSfzUOLrtbZv",
+                      }
+
+        "400":
+          description: Bad request.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/CodedError"
+                  - example:
+                      {
+                        "code": "BAD_REQUEST",
+                        "msg": "No such bot",
+                        "result": "error",
+                      }
+                    description: |
+                      An example JSON response when the bot ID is invalid:
   /real-time:
     # This entry is a hack; it exists to give us a place to put the text
     # documenting the parameters for call_on_each_event and friends.
@@ -25725,34 +25969,19 @@ components:
 
             Changed in Zulip 3.0 (feature level 22). This field was
             previously a floating point number.
-        messages:
+        message_ids:
           type: array
           description: |
-            Contains basic details on any Zulip messages that have been
-            sent referencing this [uploaded file](/api/upload-file).
-            This includes messages sent by any user in the Zulip
-            organization who sent a message containing a link to the
-            uploaded file.
+            Array containing the IDs of messages that reference this
+            [uploaded file](/api/upload-file). This includes messages
+            sent by any user in the Zulip organization who sent a
+            message containing a link to the uploaded file.
+
+            **Changes**: In Zulip 12.0 (feature level 472), this
+            replaced the previous `messages` field, which was an array
+            of objects containing both `id` and `date_sent` properties.
           items:
-            type: object
-            additionalProperties: false
-            properties:
-              date_sent:
-                type: integer
-                description: |
-                  Time when the message was sent as a UNIX timestamp.
-
-                  **Changes**: Before Zulip 12.0 (feature level 443), this value
-                  was milliseconds since the epoch, not seconds.
-
-                  Changed in Zulip 3.0 (feature level 22). This
-                  field was previously strangely called `name` and was a floating
-                  point number.
-              id:
-                type: integer
-                description: |
-                  The unique message ID. Messages should always be
-                  displayed sorted by ID.
+            type: integer
     BasicChannel:
       allOf:
         - $ref: "#/components/schemas/BasicChannelBase"

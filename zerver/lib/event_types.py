@@ -28,18 +28,13 @@ class EventAlertWords(BaseEvent):
     alert_words: list[str]
 
 
-class AttachmentMessage(BaseModel):
-    id: int
-    date_sent: int
-
-
 class Attachment(BaseModel):
     id: int
     name: str
     size: int
     path_id: str
     create_time: int
-    messages: list[AttachmentMessage]
+    message_ids: list[int]
 
 
 class EventAttachmentAdd(BaseEvent):
@@ -296,6 +291,12 @@ class EventDeviceAdd(BaseEvent):
     device_id: int
 
 
+class EventDeviceRemove(BaseEvent):
+    type: Literal["device"]
+    op: Literal["remove"]
+    device_id: int
+
+
 class EventDeviceUpdate(BaseEvent):
     type: Literal["device"]
     op: Literal["update"]
@@ -532,6 +533,8 @@ class RealmLinkifier(BaseModel):
     pattern: str
     url_template: str
     id: int
+    example_input: str | None = None
+    reverse_template: str | None = None
 
 
 class EventRealmLinkifiers(BaseEvent):

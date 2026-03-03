@@ -408,6 +408,8 @@ export const realm_linkifier_schema = z.object({
     pattern: z.string(),
     url_template: z.string(),
     id: z.number(),
+    example_input: z.optional(z.nullable(z.string())),
+    reverse_template: z.optional(z.nullable(z.string())),
 });
 
 export const realm_report_message_types = z.object({
@@ -544,6 +546,7 @@ export const realm_schema = z.object({
             ),
         }),
     ),
+    realm_media_preview_size: z.number(),
     realm_inline_image_preview: z.boolean(),
     realm_inline_url_embed_preview: z.boolean(),
     realm_invite_required: z.boolean(),

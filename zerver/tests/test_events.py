@@ -53,7 +53,7 @@ from zerver.actions.default_streams import (
     do_remove_streams_from_default_stream_group,
     lookup_default_stream_groups,
 )
-from zerver.actions.devices import do_register_device
+from zerver.actions.devices import do_register_device, do_remove_device
 from zerver.actions.invites import (
     do_create_multiuse_invite_link,
     do_invite_users,
@@ -162,7 +162,7 @@ from zerver.actions.users import (
     do_deactivate_user,
     do_update_outgoing_webhook_service,
 )
-from zerver.actions.video_calls import do_set_zoom_token
+from zerver.actions.video_calls import do_set_video_call_provider_token
 from zerver.lib.drafts import DraftData, do_create_drafts, do_delete_draft, do_edit_draft
 from zerver.lib.event_schema import (
     check_alert_words,
@@ -177,6 +177,7 @@ from zerver.lib.event_schema import (
     check_default_streams,
     check_delete_message,
     check_device_add,
+    check_device_remove,
     check_device_update,
     check_direct_message,
     check_draft_add,
@@ -1306,7 +1307,7 @@ class NormalActionsTest(BaseAction):
         message_obj = events[0]["message"]
         self.assertEqual(message_obj["sender_full_name"], iago.full_name)
         self.assertEqual(message_obj["sender_email"], iago.delivery_email)
-        self.assertIsNone(message_obj["avatar_url"])
+        self.assertIsNotNone(message_obj["avatar_url"])
 
     def test_add_reaction(self) -> None:
         message_id = self.send_stream_message(self.example_user("hamlet"), "Verona", "hello")
@@ -4287,6 +4288,12 @@ class NormalActionsTest(BaseAction):
             do_register_device(self.user_profile)
         check_device_add("events[0]", events[0])
 
+    def test_remove_device(self) -> None:
+        device = Device.objects.create(user=self.user_profile)
+        with self.verify_action() as events:
+            do_remove_device(self.user_profile, device.id)
+        check_device_remove("events[0]", events[0])
+
     def test_register_push_device(self) -> None:
         self.login_user(self.user_profile)
         device = Device.objects.create(user=self.user_profile)
@@ -4367,11 +4374,11 @@ class NormalActionsTest(BaseAction):
 
     def test_has_zoom_token(self) -> None:
         with self.verify_action() as events:
-            do_set_zoom_token(self.user_profile, {"access_token": "token"})
+            do_set_video_call_provider_token(self.user_profile, "zoom", {"access_token": "token"})
         check_has_zoom_token("events[0]", events[0], value=True)
 
         with self.verify_action() as events:
-            do_set_zoom_token(self.user_profile, None)
+            do_set_video_call_provider_token(self.user_profile, "zoom", None)
         check_has_zoom_token("events[0]", events[0], value=False)
 
     def test_restart_event(self) -> None:
@@ -4437,6 +4444,7 @@ class RealmPropertyActionTest(BaseAction):
             move_messages_within_stream_limit_seconds=[1000, 1100, 1200, None],
             move_messages_between_streams_limit_seconds=[1000, 1100, 1200, None],
             topics_policy=Realm.REALM_TOPICS_POLICY_TYPES,
+            media_preview_size=[100, 150, 200],
             default_avatar_source=["G", "J"],
         )
 

@@ -47,6 +47,9 @@ const message_events = mock_esm("../src/message_events", {
     update_current_view_for_topic_visibility: noop,
 });
 const message_lists = mock_esm("../src/message_lists");
+mock_esm("../src/thumbnail", {
+    update_thumbnails: noop,
+});
 const user_topics_ui = mock_esm("../src/user_topics_ui");
 const muted_users_ui = mock_esm("../src/muted_users_ui");
 const narrow_title = mock_esm("../src/narrow_title");
@@ -737,6 +740,10 @@ run_test("realm settings", ({override}) => {
     event = event_fixtures.realm__update__enable_spectator_access;
     dispatch(event);
     assert_same(realm.realm_enable_spectator_access, true);
+
+    event = event_fixtures.realm__update__media_preview_size;
+    dispatch(event);
+    assert_same(realm.realm_media_preview_size, 150);
 
     event = event_fixtures.realm__update_dict__default;
     override(realm, "realm_create_multiuse_invite_group", 1);
