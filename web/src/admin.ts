@@ -1,4 +1,5 @@
 import $ from "jquery";
+import assert from "minimalistic-assert";
 import * as tippy from "tippy.js";
 
 import render_admin_tab from "../templates/settings/admin_tab.hbs";
@@ -109,6 +110,7 @@ function insert_tip_box(): void {
         .not("#admin-user-list")
         .not("#admin-active-users-list")
         .not("#admin-deactivated-users-list")
+        .not("#admin-imported-users-list")
         .prepend($(tip_box_html));
 }
 
@@ -293,10 +295,12 @@ export function build_page(): void {
         active_user_list_dropdown_widget_name: settings_users.active_user_list_dropdown_widget_name,
         deactivated_user_list_dropdown_widget_name:
             settings_users.deactivated_user_list_dropdown_widget_name,
+        imported_user_list_dropdown_widget_name:
+            settings_users.imported_user_list_dropdown_widget_name,
         gif_help_link,
         ...get_realm_level_notification_settings(),
-        all_bots_list_dropdown_widget_name: settings_bots.all_bots_list_dropdown_widget_name,
-        your_bots_list_dropdown_widget_name: settings_bots.your_bots_list_dropdown_widget_name,
+        all_bots_list_dropdown_widget_name: settings_bots.org_all_bots_list_dropdown_widget_name,
+        your_bots_list_dropdown_widget_name: settings_bots.org_your_bots_list_dropdown_widget_name,
         group_setting_labels: settings_config.all_group_setting_labels.realm,
         server_can_summarize_topics: realm.server_can_summarize_topics,
         is_plan_self_hosted:
@@ -356,7 +360,8 @@ export function launch(section: string, settings_tab: string | undefined): void 
         settings_panel_menu.org_settings.set_user_settings_tab(settings_tab);
     }
     if (section === "bots") {
-        settings_panel_menu.org_settings.set_bot_settings_tab(settings_tab);
+        assert(settings_tab !== undefined);
+        settings_panel_menu.org_settings.set_bot_settings_tab(settings_tab, "org");
     }
     settings_toggle.goto("organization");
 }
