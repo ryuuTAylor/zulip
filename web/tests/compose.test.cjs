@@ -49,7 +49,9 @@ const sent_messages = mock_esm("../src/sent_messages");
 const server_events_state = mock_esm("../src/server_events_state");
 const transmit = mock_esm("../src/transmit");
 const upload = mock_esm("../src/upload");
-const onboarding_steps = mock_esm("../src/onboarding_steps");
+const onboarding_steps = mock_esm("../src/onboarding_steps", {
+    ONE_TIME_NOTICES_TO_DISPLAY: new Set(),
+});
 mock_esm("../src/settings_data", {
     user_has_permission_for_group_setting: () => true,
 });
@@ -168,10 +170,6 @@ function simulate_draft_ui_interactions() {
     // Simulate DOM relationships so that code can execute,
     // but we won't actually examine these values.
     $(".top_left_drafts").set_find_results(".unread_count", $.create("draft-unread-count-stub"));
-}
-
-function assert_compose_send_button_attr_is_undefined() {
-    assert.equal($("#compose-send-button").attr(), undefined);
 }
 
 test_ui("send_message_success", ({override, override_rewire}) => {
@@ -489,17 +487,14 @@ test_ui("finish", ({override, override_rewire}) => {
         fake_compose_box.set_textarea_val("burrito");
         compose_state.set_message_type("stream");
 
-        fake_compose_box.set_textarea_toggle_class_function((classname, value) => {
-            assert.equal(classname, "invalid");
-            assert.equal(value, true);
-        });
-
+        assert.ok(!fake_compose_box.$content_textarea.hasClass("invalid"));
         fake_compose_box.set_textarea_val("");
 
         override_rewire(compose_ui, "compose_spinner_visible", false);
         const res = compose.finish();
         assert.equal(res, false);
 
+        assert.ok(fake_compose_box.$content_textarea.hasClass("invalid"));
         assert.ok(!fake_compose_box.is_recipient_not_subscribed_banner_visible());
         assert.ok(!fake_compose_box.is_submit_button_spinner_visible());
 
@@ -600,8 +595,6 @@ test_ui("initialize", ({override}) => {
 
         compose_setup.abort_xhr();
 
-        // I'm not sure this proves anything interesting.
-        assert_compose_send_button_attr_is_undefined();
         assert.ok(uppy_cancel_all_called);
     })();
 });

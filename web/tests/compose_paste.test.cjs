@@ -145,6 +145,7 @@ run_test("paste_handler reverse linkify", ({override, override_rewire}) => {
             pattern: "#D(?P<id>[0-9]{2,8})",
             url_template: "https://github.com/zulip/zulip-desktop/pull/{id}",
             reverse_template: "#D{id}",
+            alternative_url_templates: ["https://github.com/zulip/zulip-desktop/issues/{id}"],
         },
     ]);
 
@@ -219,6 +220,13 @@ run_test("paste_handler reverse linkify", ({override, override_rewire}) => {
             expected: "#D1359 dummy text.",
             expected_undo_texts: ["https://github.com/zulip/zulip-desktop/pull/1359 dummy text."],
         },
+        {
+            // Reverse linkify should work for alternative URL templates.
+            paste_html: "",
+            paste_text: "https://github.com/zulip/zulip-desktop/issues/42",
+            expected: "#D42",
+            expected_undo_texts: ["https://github.com/zulip/zulip-desktop/issues/42"],
+        },
     ];
 
     for (const test_case of test_cases) {
@@ -227,10 +235,6 @@ run_test("paste_handler reverse linkify", ({override, override_rewire}) => {
         // The URL paste path checks this before it reaches reverse-linkify.
         $textarea[0] = window.document.createElement("textarea");
         $textarea[0].value = "";
-        $textarea.get = () => $textarea[0];
-        $textarea.val = () => $textarea[0].value;
-        $textarea.range = () => ({start: 0, end: 0, text: "", length: 0});
-        $textarea.caret = () => 0;
         inserted_text = undefined;
         undo_texts = [];
 
