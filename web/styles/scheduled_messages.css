@@ -74,8 +74,7 @@
     display: grid;
     grid-template-columns: max-content minmax(10rem, 13rem);
     align-items: center;
-    column-gap: 7px;
-    row-gap: 4px;
+    gap: 4px 7px;
 }
 
 .recurring-field-label {
@@ -116,6 +115,57 @@
 .recurring-monthly-options {
     display: grid;
     gap: 3px;
+}
+
+.recurring-monthly-pattern-list {
+    display: grid;
+    gap: 6px;
+    justify-items: start;
+}
+
+.recurring-monthly-pattern {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, max-content) minmax(
+            0,
+            max-content
+        );
+    justify-content: start;
+    place-items: center start;
+    gap: 8px;
+    min-width: 0;
+    width: max-content;
+    max-width: 100%;
+    font-size: 0.9333em;
+    padding: 0.15em 0;
+}
+
+.recurring-monthly-pattern .recurring-field-input {
+    max-width: 10rem;
+}
+
+.recurring-monthly-pattern-last-day {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+
+.recurring-monthly-pattern input[type="radio"] {
+    margin: 0;
+}
+
+.recurring-monthly-pattern .recurring-field-input:disabled {
+    opacity: 0.6;
+}
+
+.recurring-monthly-note {
+    color: var(--color-text-popover-menu);
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.recurring-monthly-summary {
+    color: var(--color-text-popover-menu);
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.35;
 }
 
 .recurring-weekday-checkboxes {
@@ -191,7 +241,7 @@
     color: var(--color-text-success-banner);
 }
 
-@media (max-width: 900px) {
+@media (width <= 900px) {
     .recurring-batch-grid {
         grid-template-columns: max-content minmax(0, 1fr);
     }
@@ -202,5 +252,9 @@
 
     #send-later-options:has(.recurring-batch-builder-item) {
         width: min(92vw, 30rem);
+    }
+
+    .recurring-monthly-pattern {
+        grid-template-columns: auto minmax(0, 1fr);
     }
 }

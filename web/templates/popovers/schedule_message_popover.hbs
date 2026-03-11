@@ -81,8 +81,53 @@
                         </div>
                     </div>
                     <div class="recurring-monthly-options recurring-hidden">
-                        <label class="recurring-field-label" for="recurring_monthday">{{t "Monthly on day" }}</label>
-                        <select id="recurring_monthday" class="recurring-field-input recurring-monthday-input" tabindex="0"></select>
+                        <span class="recurring-field-label">{{t "Monthly on" }}</span>
+                        <div class="recurring-monthly-pattern-list" role="group" aria-label="{{t 'Monthly recurrence rule' }}">
+                            <label class="recurring-monthly-pattern recurring-monthly-pattern-day">
+                                <input
+                                  type="radio"
+                                  name="recurring_monthly_pattern"
+                                  class="recurring-monthly-mode"
+                                  value="day"
+                                  checked
+                                  />
+                                <span>{{t "On the" }}</span>
+                                <select id="recurring_monthday" class="recurring-field-input recurring-monthday-input" tabindex="0"></select>
+                                <span>{{t "day of the month" }}</span>
+                            </label>
+                            <label class="recurring-monthly-pattern recurring-monthly-pattern-last-day">
+                                <input
+                                  type="radio"
+                                  name="recurring_monthly_pattern"
+                                  class="recurring-monthly-mode"
+                                  value="last_day"
+                                  />
+                                <span>{{t "On the last day of the month" }}</span>
+                            </label>
+                            <label class="recurring-monthly-pattern recurring-monthly-pattern-weekday">
+                                <input
+                                  type="radio"
+                                  name="recurring_monthly_pattern"
+                                  class="recurring-monthly-mode"
+                                  value="weekday"
+                                  />
+                                <span>{{t "On the" }}</span>
+                                <select
+                                  id="recurring_monthly_ordinal"
+                                  class="recurring-field-input recurring-monthly-ordinal-input"
+                                  tabindex="0"
+                                  ></select>
+                                <select
+                                  id="recurring_monthly_weekday"
+                                  class="recurring-field-input recurring-monthly-weekday-input"
+                                  tabindex="0"
+                                  ></select>
+                            </label>
+                        </div>
+                        <div class="recurring-monthly-note recurring-short-month-note recurring-hidden">
+                            {{t "For shorter months, this uses the last available day." }}
+                        </div>
+                        <div class="recurring-monthly-summary" aria-live="polite"></div>
                     </div>
                 </div>
 
