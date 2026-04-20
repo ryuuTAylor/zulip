@@ -818,3 +818,120 @@ class RecurringScheduledMessageDeliveryTest(ZulipTestCase):
         self._make_stream_job(overdue=True)
         result = try_deliver_one_recurring_scheduled_message()
         self.assertTrue(result)
+
+    def test_monthly_job_advances_next_delivery(self) -> None:
+        sender = self.example_user("hamlet")
+        stream_id = self.get_stream_id("Verona")
+        job = RecurringScheduledMessage.objects.create(
+            sender=sender,
+            realm=sender.realm,
+            content="Monthly reminder",
+            destinations=[{"type": "stream", "stream_id": stream_id, "topic": "test"}],
+            recurrence_type=RecurringScheduledMessage.MONTHLY,
+            recurrence_days={"type": "calendar_day", "day": 15},
+            scheduled_time=time(9, 0),
+            next_delivery=timezone_now() - timedelta(seconds=1),
+            is_active=True,
+        )
+        original_next = job.next_delivery
+        do_deliver_recurring_scheduled_message(job)
+        job.refresh_from_db()
+        self.assertTrue(job.is_active)
+        self.assertGreater(job.next_delivery, original_next)
+
+    def test_weekly_job_advances_next_delivery(self) -> None:
+        job = self._make_stream_job(
+            recurrence_type=RecurringScheduledMessage.WEEKLY,
+            recurrence_days=[2],
+        )
+        original_next = job.next_delivery
+        do_deliver_recurring_scheduled_message(job)
+        job.refresh_from_db()
+        self.assertTrue(job.is_active)
+        self.assertGreater(job.next_delivery, original_next)
+
+    def test_delivery_sends_direct_message(self) -> None:
+        hamlet = self.example_user("hamlet")
+        othello = self.example_user("othello")
+        job = RecurringScheduledMessage.objects.create(
+            sender=hamlet,
+            realm=hamlet.realm,
+            content="Direct test message",
+            destinations=[{"type": "direct", "user_ids": [hamlet.id, othello.id]}],
+            recurrence_type=RecurringScheduledMessage.DAILY,
+            recurrence_days=[],
+            scheduled_time=time(9, 0),
+            next_delivery=timezone_now() - timedelta(seconds=1),
+            is_active=True,
+        )
+        do_deliver_recurring_scheduled_message(job)
+        msg = most_recent_message(hamlet)
+        self.assertEqual(msg.content, "Direct test message")
+
+    def test_delivery_all_destinations_fail(self) -> None:
+        hamlet = self.example_user("hamlet")
+        job = RecurringScheduledMessage.objects.create(
+            sender=hamlet,
+            realm=hamlet.realm,
+            content="All fail test",
+            destinations=[
+                {"type": "stream", "stream_id": 999999, "topic": "bad1"},
+                {"type": "stream", "stream_id": 999998, "topic": "bad2"},
+            ],
+            recurrence_type=RecurringScheduledMessage.DAILY,
+            recurrence_days=[],
+            scheduled_time=time(9, 0),
+            next_delivery=timezone_now() - timedelta(seconds=1),
+            is_active=True,
+        )
+        original_next = job.next_delivery
+        # All destinations fail, but the job still gets rescheduled
+        # rather than getting stuck on the same next_delivery.
+        do_deliver_recurring_scheduled_message(job)
+        job.refresh_from_db()
+        self.assertTrue(job.is_active)
+        self.assertGreater(job.next_delivery, original_next)
+
+    def test_worker_delivers_multiple_due_jobs(self) -> None:
+        self._make_stream_job(overdue=True)
+        self._make_stream_job(overdue=True, topic="second")
+        first = try_deliver_one_recurring_scheduled_message()
+        second = try_deliver_one_recurring_scheduled_message()
+        self.assertTrue(first)
+        self.assertTrue(second)
+
+    def test_create_event_payload(self) -> None:
+        hamlet = self.example_user("hamlet")
+        stream_id = self.get_stream_id("Verona")
+        with self.capture_send_event_calls(expected_num_events=1) as events:
+            do_create_recurring_scheduled_message(
+                sender=hamlet,
+                content="Event test",
+                destinations=[{"type": "stream", "stream_id": stream_id, "topic": "test"}],
+                recurrence_type=RecurringScheduledMessage.DAILY,
+                recurrence_days=[],
+                scheduled_time=time(9, 0),
+            )
+        event = events[0]["event"]
+        self.assertEqual(event["type"], "recurring_scheduled_messages")
+        self.assertEqual(event["op"], "add")
+        self.assertIn("recurring_scheduled_message", event)
+        self.assertEqual(event["recurring_scheduled_message"]["content"], "Event test")
+
+    def test_cancel_event_payload(self) -> None:
+        hamlet = self.example_user("hamlet")
+        stream_id = self.get_stream_id("Verona")
+        job = do_create_recurring_scheduled_message(
+            sender=hamlet,
+            content="Cancel event test",
+            destinations=[{"type": "stream", "stream_id": stream_id, "topic": "test"}],
+            recurrence_type=RecurringScheduledMessage.DAILY,
+            recurrence_days=[],
+            scheduled_time=time(9, 0),
+        )
+        with self.capture_send_event_calls(expected_num_events=1) as events:
+            do_cancel_recurring_scheduled_message(job.id, hamlet)
+        event = events[0]["event"]
+        self.assertEqual(event["type"], "recurring_scheduled_messages")
+        self.assertEqual(event["op"], "remove")
+        self.assertEqual(event["recurring_scheduled_message_id"], job.id)
