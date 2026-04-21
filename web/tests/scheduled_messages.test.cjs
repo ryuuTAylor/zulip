@@ -5,7 +5,9 @@ const assert = require("node:assert/strict");
 const {make_realm} = require("./lib/example_realm.cjs");
 const {zrequire} = require("./lib/namespace.cjs");
 const {run_test} = require("./lib/test.cjs");
+const $ = require("./lib/zjquery.cjs");
 
+const compose_state = zrequire("compose_state");
 const scheduled_messages = zrequire("scheduled_messages");
 const compose_send_menu_popover = zrequire("compose_send_menu_popover");
 const {initialize_user_settings} = zrequire("user_settings");
@@ -178,4 +180,71 @@ run_test("should_update_send_later_options", () => {
             assert.ok(!compose_send_menu_popover.should_update_send_later_options(current_time));
         }
     }
+});
+
+run_test("get_recurring_schedule_request_data serializes daily recurrence", () => {
+    const $popper = $("#recurring_builder");
+    const $frequency = $("<select>").val("daily");
+    const $time = $("<input>").val("09:15");
+
+    $popper.set_find_results(".recurring-frequency-input", $frequency);
+    $popper.set_find_results(".recurring-time-input", $time);
+
+    const result = compose_send_menu_popover.get_recurring_schedule_request_data($popper);
+    assert.deepEqual(result, {
+        recurrence_type: "daily",
+        recurrence_days: JSON.stringify([]),
+        scheduled_time: "09:15",
+    });
+});
+
+run_test(
+    "get_compose_recurring_destination_summary uses current stream conversation",
+    ({override_rewire}) => {
+        compose_state.set_message_type("stream");
+        override_rewire(compose_state, "stream_name", () => "engineering");
+        override_rewire(compose_state, "topic", () => "standup");
+
+        assert.equal(
+            compose_send_menu_popover.get_compose_recurring_destination_summary(),
+            "translated: Will post to #engineering > standup",
+        );
+    },
+);
+
+run_test("format_scheduled_delivery_label formats recurring scheduled messages", () => {
+    assert.equal(
+        scheduled_messages.format_scheduled_delivery_label({
+            scheduled_message_id: 1,
+            type: "stream",
+            to: 3,
+            topic: "test topic",
+            content: "hello",
+            rendered_content: "<p>hello</p>",
+            scheduled_delivery_timestamp: 100,
+            failed: false,
+            recurrence_type: "daily",
+            recurrence_days: [],
+            scheduled_time: "09:00",
+            timezone: null,
+        }),
+        "translated: Daily at 09:00 UTC",
+    );
+
+    assert.equal(
+        scheduled_messages.format_scheduled_delivery_label({
+            scheduled_message_id: 2,
+            type: "private",
+            to: [10],
+            content: "hello",
+            rendered_content: "<p>hello</p>",
+            scheduled_delivery_timestamp: 100,
+            failed: false,
+            recurrence_type: "monthly",
+            recurrence_days: {type: "calendar_day", day: -1},
+            scheduled_time: "10:30",
+            timezone: null,
+        }),
+        "translated: Monthly on the last day at 10:30 UTC",
+    );
 });

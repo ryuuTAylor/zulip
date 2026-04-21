@@ -2,24 +2,23 @@ import $ from "jquery";
 import assert from "minimalistic-assert";
 import * as tippy from "tippy.js";
 
+import render_compose_banner from "../templates/compose_banner/compose_banner.hbs";
 import render_schedule_message_popover from "../templates/popovers/schedule_message_popover.hbs";
 import render_send_later_popover from "../templates/popovers/send_later_popover.hbs";
 
 import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 import * as compose from "./compose.ts";
+import * as compose_banner from "./compose_banner.ts";
 import * as compose_state from "./compose_state.ts";
 import * as compose_validate from "./compose_validate.ts";
 import * as drafts from "./drafts.ts";
 import * as flatpickr from "./flatpickr.ts";
-import * as input_pill from "./input_pill.ts";
 import {$t} from "./i18n.ts";
 import * as message_reminder from "./message_reminder.ts";
-import * as pill_typeahead from "./pill_typeahead.ts";
+import * as people from "./people.ts";
 import * as popover_menus from "./popover_menus.ts";
 import * as scheduled_messages from "./scheduled_messages.ts";
-import * as stream_pill from "./stream_pill.ts";
-import * as user_pill from "./user_pill.ts";
 import {parse_html} from "./ui_util.ts";
 import {user_settings} from "./user_settings.ts";
 import * as util from "./util.ts";
@@ -28,6 +27,15 @@ export const SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS = 60 * 1000;
 const ENTER_SENDS_SELECTION_DELAY = 600;
 
 let send_later_popover_keyboard_toggle = false;
+const WEEKDAY_TO_NUMBER = new Map([
+    ["MO", 0],
+    ["TU", 1],
+    ["WE", 2],
+    ["TH", 3],
+    ["FR", 4],
+    ["SA", 5],
+    ["SU", 6],
+]);
 
 function set_recurring_builder_feedback(
     $feedback: JQuery,
@@ -39,18 +47,6 @@ function set_recurring_builder_feedback(
         state === "error" ? "recurring-feedback-error" : "recurring-feedback-success",
     );
     $feedback.text(message);
-}
-
-function create_stream_pill_item(
-    stream_name: string,
-    current_items: stream_pill.StreamPill[],
-): stream_pill.StreamPill | undefined {
-    const stream_prefix_required = false;
-    return stream_pill.create_item_from_stream_name(
-        stream_name,
-        current_items,
-        stream_prefix_required,
-    );
 }
 
 function get_ordinal_day_label(day: number): string {
@@ -113,34 +109,142 @@ function get_monthly_weekday_label(weekday: string): string {
     }
 }
 
-function initialize_recurring_builder($popper: JQuery): void {
+export function get_compose_recurring_destination_summary(): string {
+    if (compose_state.get_message_type() === "stream") {
+        const stream_name = compose_state.stream_name();
+        const topic = compose_state.topic();
+        return $t({defaultMessage: "Will post to #{stream_name} > {topic}"}, {stream_name, topic});
+    }
+
+    const recipients = people.format_recipients(
+        compose_state.private_message_recipient_ids().join(","),
+        "long",
+    );
+    return $t({defaultMessage: "Will send to {recipients}"}, {recipients});
+}
+
+export function get_recurring_schedule_request_data($popper: JQuery):
+    | {
+          recurrence_days: string;
+          recurrence_type: string;
+          scheduled_time: string;
+      }
+    | {
+          error_message: string;
+      } {
+    const recurrence = String($popper.find(".recurring-frequency-input").val() ?? "");
+    const send_time = String($popper.find(".recurring-time-input").val() ?? "");
+
+    if (recurrence === "" || send_time === "") {
+        return {
+            error_message: $t({defaultMessage: "Select a recurrence and time."}),
+        };
+    }
+
+    if (recurrence === "weekly") {
+        const selected_weekdays: number[] = [];
+        $popper.find<HTMLInputElement>(".recurring-weekday:checked").each(function () {
+            const weekday = WEEKDAY_TO_NUMBER.get(String($(this).val()));
+            if (weekday !== undefined) {
+                selected_weekdays.push(weekday);
+            }
+        });
+
+        if (selected_weekdays.length === 0) {
+            return {
+                error_message: $t({
+                    defaultMessage: "For weekly recurrence, choose at least one day.",
+                }),
+            };
+        }
+
+        return {
+            recurrence_type: recurrence,
+            recurrence_days: JSON.stringify(selected_weekdays),
+            scheduled_time: send_time,
+        };
+    }
+
+    if (recurrence === "monthly") {
+        const selected_monthly_mode = String(
+            $popper.find(".recurring-monthly-mode:checked").first().val() ?? "day",
+        );
+
+        let recurrence_days:
+            | {
+                  day: number;
+                  type: "calendar_day";
+              }
+            | {
+                  ordinal: number;
+                  type: "ordinal_weekday";
+                  weekday: number;
+              };
+
+        if (selected_monthly_mode === "last_day") {
+            recurrence_days = {type: "calendar_day", day: -1};
+        } else if (selected_monthly_mode === "weekday") {
+            const ordinal_map = new Map([
+                ["first", 1],
+                ["second", 2],
+                ["third", 3],
+                ["fourth", 4],
+                ["last", -1],
+            ]);
+            const selected_ordinal = String(
+                $popper.find(".recurring-monthly-ordinal-input").val() ?? "",
+            );
+            const selected_weekday = String(
+                $popper.find(".recurring-monthly-weekday-input").val() ?? "",
+            );
+            const ordinal = ordinal_map.get(selected_ordinal);
+            const weekday = WEEKDAY_TO_NUMBER.get(selected_weekday);
+
+            if (ordinal === undefined || weekday === undefined) {
+                return {
+                    error_message: $t({
+                        defaultMessage: "For monthly recurrence, choose a weekday rule.",
+                    }),
+                };
+            }
+
+            recurrence_days = {
+                type: "ordinal_weekday",
+                ordinal,
+                weekday,
+            };
+        } else {
+            const selected_monthday = Number($popper.find(".recurring-monthday-input").val() ?? "");
+            if (!Number.isInteger(selected_monthday)) {
+                return {
+                    error_message: $t({
+                        defaultMessage: "For monthly recurrence, choose a day of the month.",
+                    }),
+                };
+            }
+            recurrence_days = {type: "calendar_day", day: selected_monthday};
+        }
+
+        return {
+            recurrence_type: recurrence,
+            recurrence_days: JSON.stringify(recurrence_days),
+            scheduled_time: send_time,
+        };
+    }
+
+    return {
+        recurrence_type: recurrence,
+        recurrence_days: JSON.stringify([]),
+        scheduled_time: send_time,
+    };
+}
+
+function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
     if ($popper.data("recurring-builder-initialized") === true) {
         return;
     }
     const $feedback = $popper.find(".recurring-builder-feedback");
-    const $channel_pill_container = $popper.find(".recurring-channels-pill-container");
-    const $dm_pill_container = $popper.find(".recurring-users-pill-container");
-    if ($channel_pill_container.length === 0 || $dm_pill_container.length === 0) {
-        return;
-    }
     $popper.data("recurring-builder-initialized", true);
-
-    const channel_pills = input_pill.create<stream_pill.StreamPill>({
-        $container: $channel_pill_container,
-        create_item_from_text: create_stream_pill_item,
-        get_text_from_item: stream_pill.get_stream_name_from_item,
-        get_display_value_from_item: stream_pill.get_display_value_from_item,
-        generate_pill_html: stream_pill.generate_pill_html,
-    });
-    pill_typeahead.set_up_stream($channel_pill_container.find(".input"), channel_pills, {
-        help_on_empty_strings: true,
-        hide_on_empty_after_backspace: true,
-    });
-
-    const dm_pills = user_pill.create_pills($dm_pill_container, {
-        exclude_inaccessible_users: true,
-    });
-    pill_typeahead.set_up_user($dm_pill_container.find(".input"), dm_pills, {});
     const $frequency = $popper.find(".recurring-frequency-input");
     const $weekly_options = $popper.find(".recurring-weekly-options");
     const $monthly_options = $popper.find(".recurring-monthly-options");
@@ -150,30 +254,34 @@ function initialize_recurring_builder($popper: JQuery): void {
     const $monthly_mode_inputs = $popper.find<HTMLInputElement>(".recurring-monthly-mode");
     const $short_month_note = $popper.find(".recurring-short-month-note");
     const $monthly_summary = $popper.find(".recurring-monthly-summary");
+    const $destination_summary = $popper.find(".recurring-builder-destination-summary");
+    $destination_summary.text(get_compose_recurring_destination_summary());
 
     for (let day = 1; day <= 31; day += 1) {
         $monthday_input.append(
-            $("<option></option>").attr("value", day).text(get_monthly_day_option_label(day)),
+            $("<option>").attr("value", day).text(get_monthly_day_option_label(day)),
         );
     }
     $monthday_input.val("1");
 
     for (const ordinal of ["first", "second", "third", "fourth", "last"]) {
         $monthly_ordinal_input.append(
-            $("<option></option>").attr("value", ordinal).text(get_monthly_ordinal_label(ordinal)),
+            $("<option>").attr("value", ordinal).text(get_monthly_ordinal_label(ordinal)),
         );
     }
     $monthly_ordinal_input.val("first");
 
     for (const weekday of ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]) {
         $monthly_weekday_input.append(
-            $("<option></option>").attr("value", weekday).text(get_monthly_weekday_label(weekday)),
+            $("<option>").attr("value", weekday).text(get_monthly_weekday_label(weekday)),
         );
     }
     $monthly_weekday_input.val("MO");
 
-    const get_selected_monthly_mode = (): string =>
-        String($monthly_mode_inputs.filter(":checked").first().val() ?? "day");
+    const get_selected_monthly_mode = (): string => {
+        const selected_monthly_mode = $monthly_mode_inputs.filter(":checked").first().val();
+        return typeof selected_monthly_mode === "string" ? selected_monthly_mode : "day";
+    };
 
     const refresh_monthly_selector = (): void => {
         const selected_monthly_mode = get_selected_monthly_mode();
@@ -237,102 +345,85 @@ function initialize_recurring_builder($popper: JQuery): void {
     $monthly_ordinal_input.on("change", refresh_monthly_summary);
     $monthly_weekday_input.on("change", refresh_monthly_summary);
 
-    $popper.on("click", ".validate-recurring-draft", (e) => {
-        const recurrence = $popper.find(".recurring-frequency-input").val();
-        const send_time = $popper.find(".recurring-time-input").val();
-        const selected_stream_ids = stream_pill.get_stream_ids(channel_pills);
-        const selected_user_ids = user_pill.get_user_ids(dm_pills);
-        const selected_weekdays = $popper.find(".recurring-weekday:checked").length;
-        const selected_monthly_mode = get_selected_monthly_mode();
-        const selected_monthday = $monthday_input.val();
-        const selected_monthly_ordinal = $monthly_ordinal_input.val();
-        const selected_monthly_weekday = $monthly_weekday_input.val();
-
-        if (
-            recurrence === undefined ||
-            recurrence === "" ||
-            send_time === undefined ||
-            send_time === ""
-        ) {
-            set_recurring_builder_feedback(
-                $feedback,
-                "error",
-                $t({defaultMessage: "Select a recurrence and time."}),
-            );
+    $popper.on("click", ".submit-recurring-draft", (e) => {
+        if (!compose_validate.validate(true)) {
             e.preventDefault();
             e.stopPropagation();
             return;
         }
 
-        if (selected_stream_ids.length === 0 && selected_user_ids.length === 0) {
-            set_recurring_builder_feedback(
-                $feedback,
-                "error",
-                $t({defaultMessage: "Add at least one destination (channel or direct message)."}),
-            );
+        const recurring_request = get_recurring_schedule_request_data($popper);
+        if ("error_message" in recurring_request) {
+            set_recurring_builder_feedback($feedback, "error", recurring_request.error_message);
             e.preventDefault();
             e.stopPropagation();
             return;
         }
 
-        if (recurrence === "weekly" && selected_weekdays === 0) {
-            set_recurring_builder_feedback(
-                $feedback,
-                "error",
-                $t({defaultMessage: "For weekly recurrence, choose at least one day."}),
-            );
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
+        const message_type = compose_state.get_message_type();
+        const req_type = message_type === "private" ? "direct" : message_type;
+        const message_to =
+            message_type === "private"
+                ? compose_state.private_message_recipient_ids()
+                : compose_state.stream_id();
+        const recurring_message_data = {
+            type: req_type,
+            to: JSON.stringify(message_to),
+            topic: message_type === "stream" ? compose_state.topic() : "",
+            content: compose_state.message_content(),
+            recurrence_type: recurring_request.recurrence_type,
+            recurrence_days: recurring_request.recurrence_days,
+            scheduled_time: recurring_request.scheduled_time,
+        };
 
-        if (
-            recurrence === "monthly" &&
-            selected_monthly_mode === "day" &&
-            (selected_monthday === undefined || selected_monthday === "")
-        ) {
-            set_recurring_builder_feedback(
-                $feedback,
-                "error",
-                $t({defaultMessage: "For monthly recurrence, choose a day of the month."}),
-            );
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
+        const draft_id = drafts.update_draft({
+            no_notify: true,
+            update_count: false,
+            is_sending_saving: true,
+            force_save: true,
+        });
+        assert(draft_id !== undefined);
 
-        if (
-            recurrence === "monthly" &&
-            selected_monthly_mode === "weekday" &&
-            (selected_monthly_ordinal === undefined ||
-                selected_monthly_ordinal === "" ||
-                selected_monthly_weekday === undefined ||
-                selected_monthly_weekday === "")
-        ) {
-            set_recurring_builder_feedback(
-                $feedback,
-                "error",
-                $t({defaultMessage: "For monthly recurrence, choose a weekday rule."}),
-            );
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
+        const $submit_button = $(e.currentTarget);
+        $submit_button.prop("disabled", true);
 
-        set_recurring_builder_feedback(
-            $feedback,
-            "success",
-            $t(
-                {
-                    defaultMessage:
-                        "Recurring draft looks valid ({channel_count} channel(s), {user_count} user(s)).",
-                },
-                {
-                    channel_count: selected_stream_ids.length,
-                    user_count: selected_user_ids.length,
-                },
-            ),
-        );
+        channel.post({
+            url: "/json/scheduled_messages",
+            data: recurring_message_data,
+            success() {
+                drafts.draft_model.deleteDrafts([draft_id]);
+                compose.clear_compose_box();
+                compose.clear_preview_area();
+                compose_banner.clear_message_sent_banners();
+                compose_banner.append_compose_banner_to_banner_list(
+                    $(
+                        render_compose_banner({
+                            banner_type: compose_banner.SUCCESS,
+                            banner_text: $t({
+                                defaultMessage: "Your recurring message has been scheduled.",
+                            }),
+                            classname:
+                                compose_banner.CLASSNAMES.message_scheduled_success_compose_banner,
+                        }),
+                    ),
+                    $("#compose_banners"),
+                );
+                popover_menus.hide_current_popover_if_visible(instance);
+            },
+            error(xhr) {
+                const draft = drafts.draft_model.getDraft(draft_id);
+                assert(draft !== false);
+                draft.is_sending_saving = false;
+                drafts.draft_model.editDraft(draft_id, draft);
+                $submit_button.prop("disabled", false);
+                set_recurring_builder_feedback(
+                    $feedback,
+                    "error",
+                    channel.xhr_error_message("Error scheduling recurring message", xhr),
+                );
+            },
+        });
+
         e.preventDefault();
         e.stopPropagation();
     });
@@ -359,8 +450,12 @@ export function open_schedule_message_menu(
         placement: remind_message_id !== undefined ? "bottom" : "top",
         hideOnClick: false,
         onClickOutside(instance, event) {
+            if (!(event.target instanceof Element)) {
+                instance.hide();
+                return;
+            }
             const clicked_in_typeahead =
-                $(event.target as HTMLElement).closest(".typeahead.dropdown-menu").length > 0;
+                $(event.target).closest(".typeahead.dropdown-menu").length > 0;
             if (clicked_in_typeahead) {
                 return;
             }
@@ -407,7 +502,7 @@ export function open_schedule_message_menu(
             }
             const $popper = $(instance.popper);
             if (remind_message_id === undefined) {
-                initialize_recurring_builder($popper);
+                initialize_recurring_builder($popper, instance);
             }
             const message_schedule_callback = (time: string | number): void => {
                 if (remind_message_id !== undefined) {
@@ -636,6 +731,9 @@ export function update_send_later_options(): void {
         const filtered_send_opts = scheduled_messages.get_filtered_send_opts(now);
         const $new_send_later_options = $(render_schedule_message_popover(filtered_send_opts));
         $("#send-later-options").replaceWith($new_send_later_options);
-        initialize_recurring_builder($new_send_later_options);
+        const instance = popover_menus.popover_instances.send_later_options;
+        if (instance !== null) {
+            initialize_recurring_builder($new_send_later_options, instance);
+        }
     }
 }

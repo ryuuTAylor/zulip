@@ -166,6 +166,16 @@ export const custom_profile_field_schema = z.object({
 
 export type CustomProfileField = z.output<typeof custom_profile_field_schema>;
 
+const recurring_scheduled_message_recurrence_days_schema = z.union([
+    z.array(z.number()),
+    z.object({
+        type: z.enum(["calendar_day", "ordinal_weekday"]),
+        day: z.optional(z.number()),
+        ordinal: z.optional(z.number()),
+        weekday: z.optional(z.number()),
+    }),
+]);
+
 export const scheduled_message_schema = z.intersection(
     z.object({
         scheduled_message_id: z.number(),
@@ -173,6 +183,10 @@ export const scheduled_message_schema = z.intersection(
         rendered_content: z.string(),
         scheduled_delivery_timestamp: z.number(),
         failed: z.boolean(),
+        recurrence_type: z.optional(z.string()),
+        recurrence_days: z.optional(recurring_scheduled_message_recurrence_days_schema),
+        scheduled_time: z.optional(z.string()),
+        timezone: z.optional(z.nullable(z.string())),
     }),
     z.discriminatedUnion("type", [
         z.object({
@@ -336,28 +350,6 @@ export const saved_snippet_schema = z.object({
     id: z.number(),
     title: z.string(),
     content: z.string(),
-    date_created: z.number(),
-});
-
-const recurring_scheduled_message_recurrence_days_schema = z.union([
-    z.array(z.number()),
-    z.object({
-        type: z.enum(["calendar_day", "ordinal_weekday"]),
-        day: z.optional(z.number()),
-        ordinal: z.optional(z.number()),
-        weekday: z.optional(z.number()),
-    }),
-]);
-
-export const recurring_scheduled_message_schema = z.object({
-    id: z.number(),
-    content: z.string(),
-    destinations: z.array(z.record(z.string(), NOT_TYPED_YET)),
-    recurrence_type: z.string(),
-    recurrence_days: recurring_scheduled_message_recurrence_days_schema,
-    scheduled_time: z.string(),
-    next_delivery: z.number(),
-    is_active: z.boolean(),
     date_created: z.number(),
 });
 
@@ -670,11 +662,6 @@ export const split_state_data_schema = z.object({
         presence_last_update_id: z.optional(z.number()),
     }),
     saved_snippets: z.object({saved_snippets: z.array(saved_snippet_schema)}),
-    recurring_scheduled_messages: z.optional(
-        z.object({
-            recurring_scheduled_messages: z.array(recurring_scheduled_message_schema),
-        }),
-    ),
     starred_messages: z.object({starred_messages: z.array(z.number())}),
     stream_data: z.object({
         subscriptions: z.array(api_stream_subscription_schema),
