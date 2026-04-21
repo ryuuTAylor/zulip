@@ -25,7 +25,7 @@ from zerver.lib.exceptions import (
 from zerver.lib.message import SendMessageRequest, access_message, truncate_topic
 from zerver.lib.recipient_parsing import extract_direct_message_recipient_ids, extract_stream_id
 from zerver.lib.reminders import get_reminder_formatted_content, notify_remove_reminder
-from zerver.lib.scheduled_messages import access_scheduled_message
+from zerver.lib.scheduled_messages import access_scheduled_message, compute_next_delivery
 from zerver.lib.string_validation import check_stream_topic
 from zerver.lib.timestamp import datetime_to_global_time
 from zerver.models import Client, Realm, ScheduledMessage, Subscription, UserProfile
@@ -33,6 +33,10 @@ from zerver.models.users import get_system_bot
 from zerver.tornado.django_api import send_event_on_commit
 
 SCHEDULED_MESSAGE_LATE_CUTOFF_MINUTES = 10
+
+
+def get_scheduled_message_delivery_time(scheduled_message: ScheduledMessage) -> datetime:
+    return scheduled_message.next_delivery or scheduled_message.scheduled_timestamp
 
 
 def check_schedule_message(
@@ -120,6 +124,7 @@ def do_schedule_messages(
         scheduled_message.realm = send_request.realm
         assert send_request.deliver_at is not None
         scheduled_message.scheduled_timestamp = send_request.deliver_at
+        scheduled_message.next_delivery = send_request.deliver_at
         scheduled_message.read_by_sender = read_by_sender
         scheduled_message.delivery_type = delivery_type
 
@@ -263,6 +268,7 @@ def edit_scheduled_message(
     if deliver_at is not None:
         # User has updated the scheduled message's send timestamp.
         scheduled_message_object.scheduled_timestamp = deliver_at
+        scheduled_message_object.next_delivery = deliver_at
 
     # Update for most recent Client information.
     scheduled_message_object.sending_client = client
@@ -340,7 +346,8 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
         raise UserDeactivatedError
 
     # Limit how late we're willing to send a scheduled message.
-    latest_send_time = scheduled_message.scheduled_timestamp + timedelta(
+    delivery_time = get_scheduled_message_delivery_time(scheduled_message)
+    latest_send_time = delivery_time + timedelta(
         minutes=SCHEDULED_MESSAGE_LATE_CUTOFF_MINUTES
     )
     if timezone_now() > latest_send_time:
@@ -377,9 +384,21 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
         mark_as_read=[scheduled_message.sender_id] if scheduled_message.read_by_sender else [],
     )[0]
     scheduled_message.delivered_message_id = sent_message_result.message_id
-    scheduled_message.delivered = True
-    scheduled_message.save(update_fields=["delivered", "delivered_message_id"])
-    notify_remove_scheduled_message(scheduled_message.sender, scheduled_message.id)
+    if scheduled_message.recurrence_type is not None:
+        assert scheduled_message.recurrence_days is not None
+        assert scheduled_message.scheduled_time is not None
+        scheduled_message.next_delivery = compute_next_delivery(
+            scheduled_message.recurrence_type,
+            scheduled_message.recurrence_days,
+            scheduled_message.scheduled_time,
+            timezone_now(),
+        )
+        scheduled_message.save(update_fields=["delivered_message_id", "next_delivery"])
+        notify_update_scheduled_message(scheduled_message.sender, scheduled_message)
+    else:
+        scheduled_message.delivered = True
+        scheduled_message.save(update_fields=["delivered", "delivered_message_id"])
+        notify_remove_scheduled_message(scheduled_message.sender, scheduled_message.id)
 
 
 def send_failed_scheduled_message_notification(
@@ -389,7 +408,9 @@ def send_failed_scheduled_message_notification(
 
     with override_language(user_profile.default_language):
         error_string = scheduled_message.failure_message
-        delivery_time_markdown = datetime_to_global_time(scheduled_message.scheduled_timestamp)
+        delivery_time_markdown = datetime_to_global_time(
+            get_scheduled_message_delivery_time(scheduled_message)
+        )
 
         content = "".join(
             [
@@ -422,10 +443,11 @@ def try_deliver_one_scheduled_message() -> bool:
     # delivery on, regardless of whether delivery succeeded.
     scheduled_message = (
         ScheduledMessage.objects.filter(
-            scheduled_timestamp__lte=timezone_now(),
+            next_delivery__lte=timezone_now(),
             delivered=False,
             failed=False,
         )
+        .order_by("next_delivery", "id")
         .select_for_update(no_key=True)
         .first()
     )
@@ -436,7 +458,7 @@ def try_deliver_one_scheduled_message() -> bool:
     logging.info(
         "Sending scheduled message %s with date %s (sender: %s)",
         scheduled_message.id,
-        scheduled_message.scheduled_timestamp,
+        get_scheduled_message_delivery_time(scheduled_message),
         scheduled_message.sender_id,
     )
 
