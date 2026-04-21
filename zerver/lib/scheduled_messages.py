@@ -19,6 +19,43 @@ UTC = timezone.utc
 RecurrenceDays = list[int] | dict[str, str | int]
 
 
+def parse_scheduled_time(scheduled_time_str: str) -> time:
+    """Parse a "HH:MM" UTC string into a time object."""
+    try:
+        parts = scheduled_time_str.split(":")
+        if len(parts) != 2:
+            raise ValueError
+        hour, minute = int(parts[0]), int(parts[1])
+        return time(hour, minute)
+    except (ValueError, AttributeError) as e:
+        raise ValueError("Invalid scheduled_time format. Expected HH:MM in UTC.") from e
+
+
+def validate_recurrence_days(recurrence_days: RecurrenceDays, recurrence_type: str) -> None:
+    """Raise ValueError if recurrence_days is invalid for recurrence_type."""
+    if recurrence_type == ScheduledMessage.DAILY:
+        if recurrence_days:
+            raise ValueError("recurrence_days must be empty for daily recurrence type.")
+        return
+
+    if recurrence_type in (ScheduledMessage.WEEKLY, ScheduledMessage.SPECIFIC_DAYS):
+        if not isinstance(recurrence_days, list) or not recurrence_days:
+            raise ValueError(
+                "recurrence_days is required for weekly and specific_days recurrence types."
+            )
+        if not all(isinstance(day, int) and 0 <= day <= 6 for day in recurrence_days):
+            raise ValueError(
+                "recurrence_days must be integers between 0 (Monday) and 6 (Sunday)."
+            )
+        return
+
+    if recurrence_type == ScheduledMessage.MONTHLY:
+        validate_monthly_rule(recurrence_days)
+        return
+
+    raise ValueError(f"Unknown recurrence_type {recurrence_type!r}.")
+
+
 def access_scheduled_message(
     user_profile: UserProfile, scheduled_message_id: int
 ) -> ScheduledMessage:
@@ -40,7 +77,7 @@ def get_undelivered_scheduled_messages(
         # to display those to users.
         delivered=False,
         delivery_type=ScheduledMessage.SEND_LATER,
-    ).order_by("scheduled_timestamp")
+    ).order_by("next_delivery", "scheduled_timestamp")
     scheduled_message_dicts: list[APIScheduledDirectMessageDict | APIScheduledStreamMessageDict] = [
         scheduled_message.to_dict() for scheduled_message in scheduled_messages
     ]

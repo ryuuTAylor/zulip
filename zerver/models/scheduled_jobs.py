@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import CASCADE, Q
 from django.utils.timezone import now as timezone_now
-from typing_extensions import override
+from typing_extensions import NotRequired, override
 
 from zerver.lib.display_recipient import get_recipient_ids
 from zerver.lib.timestamp import datetime_to_timestamp
@@ -126,6 +126,10 @@ class APIScheduledStreamMessageDict(TypedDict):
     topic: str
     scheduled_delivery_timestamp: int
     failed: bool
+    recurrence_type: NotRequired[str]
+    recurrence_days: NotRequired[list[int] | dict[str, str | int]]
+    scheduled_time: NotRequired[str]
+    timezone: NotRequired[str | None]
 
 
 class APIScheduledDirectMessageDict(TypedDict):
@@ -136,6 +140,10 @@ class APIScheduledDirectMessageDict(TypedDict):
     rendered_content: str
     scheduled_delivery_timestamp: int
     failed: bool
+    recurrence_type: NotRequired[str]
+    recurrence_days: NotRequired[list[int] | dict[str, str | int]]
+    scheduled_time: NotRequired[str]
+    timezone: NotRequired[str | None]
 
 
 class APIReminderDirectMessageDict(TypedDict):
@@ -293,34 +301,53 @@ class ScheduledMessage(models.Model):
 
     def to_dict(self) -> APIScheduledStreamMessageDict | APIScheduledDirectMessageDict:
         recipient, recipient_type_str = get_recipient_ids(self.recipient, self.sender.id)
+        delivery_timestamp = self.next_delivery or self.scheduled_timestamp
 
         if recipient_type_str == "private":
             # The topic for direct messages should always be "\x07".
             assert self.topic_name() == Message.DM_TOPIC
 
-            return APIScheduledDirectMessageDict(
+            scheduled_message_dict = APIScheduledDirectMessageDict(
                 scheduled_message_id=self.id,
                 to=recipient,
                 type=recipient_type_str,
                 content=self.content,
                 rendered_content=self.rendered_content,
-                scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+                scheduled_delivery_timestamp=datetime_to_timestamp(delivery_timestamp),
                 failed=self.failed,
             )
+            if self.recurrence_type is not None:
+                scheduled_message_dict["recurrence_type"] = self.recurrence_type
+                scheduled_message_dict["recurrence_days"] = self.recurrence_days
+                assert self.scheduled_time is not None
+                scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+                    timespec="minutes"
+                )
+                scheduled_message_dict["timezone"] = self.timezone
+            return scheduled_message_dict
 
         # The recipient for stream messages should always just be the unique stream ID.
         assert len(recipient) == 1
 
-        return APIScheduledStreamMessageDict(
+        scheduled_message_dict = APIScheduledStreamMessageDict(
             scheduled_message_id=self.id,
             to=recipient[0],
             type=recipient_type_str,
             content=self.content,
             rendered_content=self.rendered_content,
             topic=self.topic_name(),
-            scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+            scheduled_delivery_timestamp=datetime_to_timestamp(delivery_timestamp),
             failed=self.failed,
         )
+        if self.recurrence_type is not None:
+            scheduled_message_dict["recurrence_type"] = self.recurrence_type
+            scheduled_message_dict["recurrence_days"] = self.recurrence_days
+            assert self.scheduled_time is not None
+            scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+                timespec="minutes"
+            )
+            scheduled_message_dict["timezone"] = self.timezone
+        return scheduled_message_dict
 
     def to_reminder_dict(self) -> APIReminderDirectMessageDict:
         assert self.reminder_target_message_id is not None

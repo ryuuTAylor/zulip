@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -74,6 +74,10 @@ def check_schedule_message(
         [send_request],
         sender,
         read_by_sender=read_by_sender,
+        recurrence_type=recurrence_type,
+        recurrence_days=recurrence_days,
+        scheduled_time=scheduled_time,
+        timezone=timezone,
         skip_events=skip_events,
         delivery_type=ScheduledMessage.SEND_LATER,
     )[0]
@@ -106,6 +110,10 @@ def do_schedule_messages(
     sender: UserProfile,
     *,
     read_by_sender: bool = False,
+    recurrence_type: str | None = None,
+    recurrence_days: list[int] | dict[str, str | int] | None = None,
+    scheduled_time: time | None = None,
+    timezone: str | None = None,
     skip_events: bool = False,
     delivery_type: int,
 ) -> list[int]:
@@ -127,6 +135,10 @@ def do_schedule_messages(
         scheduled_message.next_delivery = send_request.deliver_at
         scheduled_message.read_by_sender = read_by_sender
         scheduled_message.delivery_type = delivery_type
+        scheduled_message.recurrence_type = recurrence_type
+        scheduled_message.recurrence_days = recurrence_days
+        scheduled_message.scheduled_time = scheduled_time
+        scheduled_message.timezone = timezone
 
         if delivery_type == ScheduledMessage.REMIND:
             scheduled_message.reminder_target_message_id = send_request.reminder_target_message_id

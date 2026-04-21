@@ -7733,9 +7733,53 @@ paths:
                 scheduled_delivery_timestamp:
                   type: integer
                   description: |
-                    The UNIX timestamp for when the message will be sent,
-                    in UTC seconds.
+                    The UNIX timestamp for when a one-time scheduled message
+                    will be sent, in UTC seconds.
+
+                    This parameter is required for one-time scheduled messages,
+                    and should be omitted for recurring scheduled messages.
                   example: 3165826990
+                recurrence_type:
+                  type: string
+                  description: |
+                    The recurrence cadence for a recurring scheduled message.
+
+                    When omitted, the scheduled message is a one-time message.
+                  enum:
+                    - daily
+                    - weekly
+                    - specific_days
+                    - monthly
+                  example: weekly
+                recurrence_days:
+                  description: |
+                    Additional recurrence rule data for recurring scheduled messages.
+
+                    For `"daily"`, this should be an empty array.
+                    For `"weekly"` and `"specific_days"`, this should be an array
+                    of weekday integers using 0 for Monday through 6 for Sunday.
+                    For `"monthly"`, this should be an object describing either
+                    a calendar day rule or an ordinal weekday rule.
+                  oneOf:
+                    - type: array
+                      items:
+                        type: integer
+                    - type: object
+                  example: [0, 2, 4]
+                scheduled_time:
+                  type: string
+                  description: |
+                    The UTC time of day when a recurring scheduled message
+                    should fire, formatted as `HH:MM`.
+                  example: "09:00"
+                timezone:
+                  type: string
+                  nullable: true
+                  description: |
+                    The IANA time zone name for the recurring scheduled message.
+
+                    A value of `null` means UTC.
+                  example: "America/New_York"
                 read_by_sender:
                   type: boolean
                   description: |
@@ -7749,9 +7793,10 @@ paths:
                 - type
                 - to
                 - content
-                - scheduled_delivery_timestamp
             encoding:
               to:
+                contentType: application/json
+              recurrence_days:
                 contentType: application/json
               scheduled_delivery_timestamp:
                 contentType: application/json
@@ -28343,9 +28388,44 @@ components:
         scheduled_delivery_timestamp:
           type: integer
           description: |
-            The UNIX timestamp for when the message will be sent
+            The UNIX timestamp for when the message will next be sent
             by the server, in UTC seconds.
           example: 1595479019
+        recurrence_type:
+          type: string
+          description: |
+            Present if this scheduled message is recurring.
+
+            The recurrence cadence for the message.
+          enum:
+            - daily
+            - weekly
+            - specific_days
+            - monthly
+        recurrence_days:
+          description: |
+            Present if this scheduled message is recurring.
+
+            Additional recurrence rule data for the message.
+          oneOf:
+            - type: array
+              items:
+                type: integer
+            - type: object
+        scheduled_time:
+          type: string
+          description: |
+            Present if this scheduled message is recurring.
+
+            The UTC time of day when the message is scheduled to fire,
+            formatted as `HH:MM`.
+        timezone:
+          type: string
+          nullable: true
+          description: |
+            Present if this scheduled message is recurring.
+
+            The configured IANA time zone name. A value of `null` means UTC.
         failed:
           type: boolean
           description: |
@@ -28380,6 +28460,10 @@ components:
             content: {}
             rendered_content: {}
             scheduled_delivery_timestamp: {}
+            recurrence_type: {}
+            recurrence_days: {}
+            scheduled_time: {}
+            timezone: {}
             failed: {}
     Reminder:
       type: object
