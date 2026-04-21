@@ -8,6 +8,8 @@ import * as timerender from "./timerender.ts";
 
 export type ScheduledMessage = z.infer<typeof scheduled_message_schema>;
 
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 type TimeKey =
     | "today_nine_am"
     | "today_four_pm"
@@ -36,6 +38,133 @@ export let show_minimum_scheduled_message_delay_minutes_note = false;
 
 export function get_all_scheduled_messages(): ScheduledMessage[] {
     return [...scheduled_messages_by_id.values()];
+}
+
+function format_ordinal_day(day: number): string {
+    const remainder_hundred = day % 100;
+    if (remainder_hundred >= 11 && remainder_hundred <= 13) {
+        return `${day}th`;
+    }
+
+    switch (day % 10) {
+        case 1:
+            return `${day}st`;
+        case 2:
+            return `${day}nd`;
+        case 3:
+            return `${day}rd`;
+        default:
+            return `${day}th`;
+    }
+}
+
+function get_timezone_label(scheduled_message: ScheduledMessage): string {
+    return scheduled_message.timezone ?? "UTC";
+}
+
+export function format_scheduled_delivery_label(scheduled_message: ScheduledMessage): string {
+    if (scheduled_message.recurrence_type === undefined) {
+        return timerender.get_full_datetime(
+            new Date(scheduled_message.scheduled_delivery_timestamp * 1000),
+            "time",
+        );
+    }
+
+    const timezone_label = get_timezone_label(scheduled_message);
+    const scheduled_time = scheduled_message.scheduled_time ?? "00:00";
+
+    if (scheduled_message.recurrence_type === "daily") {
+        return $t(
+            {defaultMessage: "Daily at {time} {timezone}"},
+            {
+                time: scheduled_time,
+                timezone: timezone_label,
+            },
+        );
+    }
+
+    if (scheduled_message.recurrence_type === "monthly" && scheduled_message.recurrence_days) {
+        if (Array.isArray(scheduled_message.recurrence_days)) {
+            return $t(
+                {defaultMessage: "Monthly at {time} {timezone}"},
+                {
+                    time: scheduled_time,
+                    timezone: timezone_label,
+                },
+            );
+        }
+
+        if (scheduled_message.recurrence_days.type === "calendar_day") {
+            if (scheduled_message.recurrence_days.day === -1) {
+                return $t(
+                    {defaultMessage: "Monthly on the last day at {time} {timezone}"},
+                    {
+                        time: scheduled_time,
+                        timezone: timezone_label,
+                    },
+                );
+            }
+
+            return $t(
+                {defaultMessage: "Monthly on the {day} at {time} {timezone}"},
+                {
+                    day: format_ordinal_day(scheduled_message.recurrence_days.day ?? 1),
+                    time: scheduled_time,
+                    timezone: timezone_label,
+                },
+            );
+        }
+
+        const ordinal_labels = new Map([
+            [-1, "last"],
+            [1, "first"],
+            [2, "second"],
+            [3, "third"],
+            [4, "fourth"],
+        ]);
+        const ordinal = ordinal_labels.get(scheduled_message.recurrence_days.ordinal ?? 1) ?? "";
+        const weekday = DAY_NAMES[scheduled_message.recurrence_days.weekday ?? 0] ?? "Mon";
+        return $t(
+            {defaultMessage: "Monthly on the {ordinal} {weekday} at {time} {timezone}"},
+            {
+                ordinal,
+                weekday,
+                time: scheduled_time,
+                timezone: timezone_label,
+            },
+        );
+    }
+
+    const recurrence_days = scheduled_message.recurrence_days ?? [];
+    const day_labels = Array.isArray(recurrence_days)
+        ? recurrence_days
+              .map((day) => DAY_NAMES[day] ?? "")
+              .filter(Boolean)
+              .join("/")
+        : "";
+    const recurrence_label =
+        scheduled_message.recurrence_type === "weekly" ? "Weekly" : "Specific days";
+
+    if (day_labels !== "") {
+        return $t(
+            {defaultMessage: "{recurrence} on {days} at {time} {timezone}"},
+            {
+                recurrence: recurrence_label,
+                days: day_labels,
+                time: scheduled_time,
+                timezone: timezone_label,
+            },
+        );
+    }
+
+    return $t(
+        {defaultMessage: "{recurrence} at {time} {timezone}"},
+        {
+            recurrence: recurrence_label,
+            time: scheduled_time,
+            timezone: timezone_label,
+        },
+    );
 }
 
 function compute_send_times(now = new Date()): Record<TimeKey, number> {

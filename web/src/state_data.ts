@@ -166,6 +166,16 @@ export const custom_profile_field_schema = z.object({
 
 export type CustomProfileField = z.output<typeof custom_profile_field_schema>;
 
+const recurring_scheduled_message_recurrence_days_schema = z.union([
+    z.array(z.number()),
+    z.object({
+        type: z.enum(["calendar_day", "ordinal_weekday"]),
+        day: z.optional(z.number()),
+        ordinal: z.optional(z.number()),
+        weekday: z.optional(z.number()),
+    }),
+]);
+
 export const scheduled_message_schema = z.intersection(
     z.object({
         scheduled_message_id: z.number(),
@@ -173,6 +183,10 @@ export const scheduled_message_schema = z.intersection(
         rendered_content: z.string(),
         scheduled_delivery_timestamp: z.number(),
         failed: z.boolean(),
+        recurrence_type: z.optional(z.string()),
+        recurrence_days: z.optional(recurring_scheduled_message_recurrence_days_schema),
+        scheduled_time: z.optional(z.string()),
+        timezone: z.optional(z.nullable(z.string())),
     }),
     z.discriminatedUnion("type", [
         z.object({
@@ -338,16 +352,6 @@ export const saved_snippet_schema = z.object({
     content: z.string(),
     date_created: z.number(),
 });
-
-const recurring_scheduled_message_recurrence_days_schema = z.union([
-    z.array(z.number()),
-    z.object({
-        type: z.enum(["calendar_day", "ordinal_weekday"]),
-        day: z.optional(z.number()),
-        ordinal: z.optional(z.number()),
-        weekday: z.optional(z.number()),
-    }),
-]);
 
 export const recurring_scheduled_message_schema = z.object({
     id: z.number(),
