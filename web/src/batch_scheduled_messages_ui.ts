@@ -124,7 +124,7 @@ function add_stream_destination(): void {
 function init_dm_pill_widget(): void {
     const $container = $("#batch-dm-pill-container");
     // Re-seed the container with a fresh contenteditable input so the pill
-    // widget has a clean slate each time (avoids stale pill DOM nodes).
+    // widget has a clean slate the first time the modal opens.
     $container.empty();
     $container.append(
         $('<div class="input" contenteditable="true" tabindex="0"></div>'),
@@ -132,6 +132,20 @@ function init_dm_pill_widget(): void {
 
     dm_pill_widget = user_pill.create_pills($container, {exclude_inaccessible_users: true});
     pill_typeahead.set_up_user($container.find(".input"), dm_pill_widget, {});
+}
+
+function clear_dm_pills(): void {
+    if (dm_pill_widget === null) {
+        return;
+    }
+    // Remove every pill through the widget API (keeps the DOM skeleton and
+    // focus intact — avoids the browser moving focus to the next focusable
+    // element, which would open the channel <select> dropdown).
+    const pill_elements = $("#batch-dm-pill-container").find(".pill").toArray();
+    for (const el of pill_elements) {
+        dm_pill_widget.removePill(el);
+    }
+    dm_pill_widget.clear_text();
 }
 
 function add_direct_destination(): void {
@@ -149,8 +163,9 @@ function add_direct_destination(): void {
     clear_modal_error();
     render_pending_destinations();
 
-    // Reinitialize the pill widget so the input is empty for the next entry.
-    init_dm_pill_widget();
+    // Clear pills via the widget API, not by re-initialising the DOM, so
+    // focus stays inside the pill container rather than jumping to the select.
+    clear_dm_pills();
 }
 
 // ---------------------------------------------------------------------------

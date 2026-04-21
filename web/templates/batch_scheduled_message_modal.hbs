@@ -27,23 +27,26 @@
         <div class="modal-field-label">{{t "Destinations" }}</div>
         <div id="batch-destinations-list"></div>
 
-        <div id="batch-add-stream-form" class="rsm-add-dest-form">
-            <select id="batch-stream-select" class="modal-select">
-                <option value="">{{t "— Select a channel —" }}</option>
-            </select>
-            <input
-                id="batch-topic-input"
-                type="text"
-                class="modal_text_input"
-                placeholder="{{t 'Topic' }}"
-            />
+        <div id="batch-add-stream-form" class="rsm-add-dest-form" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <div style="display: flex; gap: 6px; width: 100%;">
+                <select id="batch-stream-select" class="modal-select" style="flex: 1;">
+                    <option value="">{{t "— Select a channel —" }}</option>
+                </select>
+                <input
+                    id="batch-topic-input"
+                    type="text"
+                    class="modal_text_input"
+                    placeholder="{{t 'Topic' }}"
+                    style="flex: 1;"
+                />
+            </div>
             <button type="button" id="batch-add-stream-btn" class="button small rounded">
                 {{t "+ Add channel" }}
             </button>
         </div>
 
-        <div id="batch-add-direct-form" class="rsm-add-dest-form">
-            <div id="batch-dm-pill-container" class="pill-container">
+        <div id="batch-add-direct-form" class="rsm-add-dest-form" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+            <div id="batch-dm-pill-container" class="pill-container" style="width: 100%;">
                 <div class="input" contenteditable="true" tabindex="0"></div>
             </div>
             <button type="button" id="batch-add-direct-btn" class="button small rounded">
