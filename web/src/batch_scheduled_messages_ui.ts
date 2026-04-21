@@ -5,6 +5,7 @@ import render_batch_scheduled_message_modal from "../templates/batch_scheduled_m
 
 import * as channel from "./channel.ts";
 import * as compose_state from "./compose_state.ts";
+import * as composebox_typeahead from "./composebox_typeahead.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
 import * as input_pill from "./input_pill.ts";
@@ -29,6 +30,12 @@ let pending_destinations: Destination[] = [];
 // the modal opens (via open_batch_modal) and re-created after each "Add DM"
 // to clear out the selected pills.
 let dm_pill_widget: input_pill.InputPillContainer<user_pill.UserPill> | null = null;
+
+// Topic typeahead instance for #batch-topic-input. Replaced whenever the
+// stream selection changes; null when no stream is selected.
+let current_topic_typeahead: ReturnType<
+    typeof composebox_typeahead.initialize_topic_edit_typeahead
+> | null = null;
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -83,6 +90,34 @@ function remove_destination(idx: number): void {
 }
 
 // ---------------------------------------------------------------------------
+// Duplicate-destination guards
+// ---------------------------------------------------------------------------
+
+function is_duplicate_stream_destination(stream_id: number, topic: string): boolean {
+    // Topic comparison is case-insensitive — "General" and "general" refer to
+    // the same topic in Zulip.
+    const topic_lower = topic.toLowerCase();
+    return pending_destinations.some(
+        (dest) =>
+            dest.type === "stream" &&
+            dest.stream_id === stream_id &&
+            dest.topic.toLowerCase() === topic_lower,
+    );
+}
+
+function is_duplicate_direct_destination(user_ids: number[]): boolean {
+    // Order-independent comparison: [101, 202] equals [202, 101].
+    const sorted_new = [...user_ids].sort((a, b) => a - b);
+    return pending_destinations.some((dest) => {
+        if (dest.type !== "direct" || dest.user_ids.length !== user_ids.length) {
+            return false;
+        }
+        const sorted_existing = [...dest.user_ids].sort((a, b) => a - b);
+        return sorted_existing.every((id, i) => id === sorted_new[i]);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Channel (stream) destination — dropdown + topic text input
 // ---------------------------------------------------------------------------
 
@@ -99,6 +134,28 @@ function populate_stream_select(): void {
     }
 }
 
+function update_topic_typeahead(): void {
+    const stream_id_str = ($<HTMLSelectElement>("#batch-stream-select").val() ?? "").toString();
+    if (!stream_id_str) {
+        current_topic_typeahead = null;
+        return;
+    }
+    const stream_id = Number.parseInt(stream_id_str, 10);
+    const sub = sub_store.get(stream_id);
+    if (sub === undefined) {
+        current_topic_typeahead = null;
+        return;
+    }
+    // Initialise (or replace) the typeahead bound to the topic text input.
+    // initialize_topic_edit_typeahead internally calls topics_seen_for(stream_id)
+    // to build the suggestion list, so it always reflects the selected stream.
+    current_topic_typeahead = composebox_typeahead.initialize_topic_edit_typeahead(
+        $<HTMLInputElement>("#batch-topic-input"),
+        sub.name,
+        false,
+    );
+}
+
 function add_stream_destination(): void {
     const stream_id_str = ($<HTMLSelectElement>("#batch-stream-select").val() ?? "").toString();
     const topic = ($<HTMLInputElement>("#batch-topic-input").val() ?? "").trim();
@@ -109,12 +166,21 @@ function add_stream_destination(): void {
     }
 
     const stream_id = Number.parseInt(stream_id_str, 10);
+
+    if (is_duplicate_stream_destination(stream_id, topic)) {
+        show_modal_error(
+            $t({defaultMessage: "This channel and topic is already in the destination list."}),
+        );
+        return;
+    }
+
     pending_destinations.push({type: "stream", stream_id, topic});
     clear_modal_error();
     render_pending_destinations();
 
     $<HTMLSelectElement>("#batch-stream-select").val("");
     $<HTMLInputElement>("#batch-topic-input").val("");
+    current_topic_typeahead = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +222,13 @@ function add_direct_destination(): void {
     const user_ids = user_pill.get_user_ids(dm_pill_widget);
     if (user_ids.length === 0) {
         show_modal_error($t({defaultMessage: "Please select at least one recipient."}));
+        return;
+    }
+
+    if (is_duplicate_direct_destination(user_ids)) {
+        show_modal_error(
+            $t({defaultMessage: "This direct message recipient set is already in the destination list."}),
+        );
         return;
     }
 
@@ -244,6 +317,9 @@ function post_render_batch_modal(): void {
     }
     render_pending_destinations();
 
+    // Update the topic typeahead whenever the selected channel changes.
+    $("#batch-stream-select").on("change", update_topic_typeahead);
+
     // Wire up add-destination buttons.
     $("#batch-add-stream-btn").on("click", add_stream_destination);
     $("#batch-add-direct-btn").on("click", add_direct_destination);
@@ -267,6 +343,7 @@ function post_render_batch_modal(): void {
 export function open_batch_modal(): void {
     pending_destinations = [];
     dm_pill_widget = null;
+    current_topic_typeahead = null;
     dialog_widget.launch({
         modal_title_html: $t_html({defaultMessage: "Batch schedule message"}),
         modal_content_html: render_batch_scheduled_message_modal(),
