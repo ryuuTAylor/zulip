@@ -16,7 +16,6 @@ import * as scheduled_messages_ui from "./scheduled_messages_ui.ts";
 import * as stream_color from "./stream_color.ts";
 import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
-import * as timerender from "./timerender.ts";
 import * as util from "./util.ts";
 
 type ScheduledMessageRenderContext = ScheduledMessage &
@@ -86,14 +85,14 @@ export function handle_keyboard_events(event_key: string): void {
     messages_overlay_ui.modals_handle_events(event_key, keyboard_handling_context);
 }
 
-function format(scheduled_messages: ScheduledMessage[]): ScheduledMessageRenderContext[] {
-    const formatted_scheduled_msgs = [];
-    const sorted_scheduled_messages = sort_scheduled_messages(scheduled_messages);
+function format(all_scheduled_messages: ScheduledMessage[]): ScheduledMessageRenderContext[] {
+    const formatted_scheduled_msgs: ScheduledMessageRenderContext[] = [];
+    const sorted_scheduled_messages = sort_scheduled_messages(all_scheduled_messages);
 
     for (const scheduled_msg of sorted_scheduled_messages) {
-        let scheduled_msg_render_context;
-        const time = new Date(scheduled_msg.scheduled_delivery_timestamp * 1000);
-        const formatted_send_at_time = timerender.get_full_datetime(time, "time");
+        let scheduled_msg_render_context: ScheduledMessageRenderContext;
+        const formatted_send_at_time =
+            scheduled_messages.format_scheduled_delivery_label(scheduled_msg);
         if (scheduled_msg.type === "stream") {
             const stream_id = scheduled_msg.to;
             let stream_name;

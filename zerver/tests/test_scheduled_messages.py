@@ -1,6 +1,7 @@
 import re
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from datetime import time as datetime_time
 from io import StringIO
 from typing import TYPE_CHECKING, Any
 from unittest import mock
@@ -16,14 +17,123 @@ from zerver.actions.scheduled_messages import (
 )
 from zerver.actions.users import change_user_is_active
 from zerver.lib.message import is_message_to_self
+from zerver.lib.scheduled_messages import compute_next_delivery
 from zerver.lib.test_classes import ZulipTestCase
 from zerver.lib.test_helpers import most_recent_message
 from zerver.lib.timestamp import timestamp_to_datetime
-from zerver.models import Attachment, Message, Recipient, ScheduledMessage, UserMessage
+from zerver.models import Attachment, Message, Recipient, ScheduledMessage, Stream, UserMessage
+from zerver.models.clients import get_client
 from zerver.models.recipients import get_or_create_direct_message_group
 
 if TYPE_CHECKING:
     from django.test.client import _MonkeyPatchedWSGIResponse as TestHttpResponse
+
+
+UTC = timezone.utc
+NOW = datetime(2026, 1, 7, 10, 0, 0, tzinfo=UTC)
+
+
+class ScheduledMessageComputeNextDeliveryTest(ZulipTestCase):
+    def test_daily_time_not_yet_passed_today(self) -> None:
+        result = compute_next_delivery(ScheduledMessage.DAILY, [], datetime_time(11, 0), NOW)
+        self.assertEqual(result, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC))
+
+    def test_weekly_today_is_matching_day_time_passed(self) -> None:
+        result = compute_next_delivery(ScheduledMessage.WEEKLY, [2], datetime_time(9, 0), NOW)
+        self.assertEqual(result, datetime(2026, 1, 14, 9, 0, 0, tzinfo=UTC))
+
+    def test_specific_days_skips_to_next_matching_day(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.SPECIFIC_DAYS,
+            [0, 2, 4],
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 1, 9, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_in_current_month(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": 15},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_past_this_month(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": 5},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 2, 5, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_last_day(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": -1},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 1, 31, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_last_day_is_leap_day(self) -> None:
+        after = datetime(2024, 1, 31, 10, 0, 0, tzinfo=UTC)
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": -1},
+            datetime_time(9, 0),
+            after,
+        )
+        self.assertEqual(result, datetime(2024, 2, 29, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_clamped_for_short_month(self) -> None:
+        after = datetime(2026, 1, 31, 10, 0, 0, tzinfo=UTC)
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": 31},
+            datetime_time(9, 0),
+            after,
+        )
+        self.assertEqual(result, datetime(2026, 2, 28, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_ordinal_weekday_first_monday_past_this_month(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "ordinal_weekday", "ordinal": 1, "weekday": 0},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 2, 2, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_ordinal_weekday_last_friday(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "ordinal_weekday", "ordinal": -1, "weekday": 4},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 1, 30, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_ordinal_weekday_fourth_in_current_month(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "ordinal_weekday", "ordinal": 4, "weekday": 2},
+            datetime_time(9, 0),
+            NOW,
+        )
+        self.assertEqual(result, datetime(2026, 1, 28, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_ordinal_weekday_advances_to_next_month_when_past(self) -> None:
+        after = datetime(2026, 1, 28, 10, 0, 0, tzinfo=UTC)
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "ordinal_weekday", "ordinal": 4, "weekday": 2},
+            datetime_time(9, 0),
+            after,
+        )
+        self.assertEqual(result, datetime(2026, 2, 25, 9, 0, 0, tzinfo=UTC))
 
 
 class ScheduledMessageTest(ZulipTestCase):
@@ -57,6 +167,37 @@ class ScheduledMessageTest(ZulipTestCase):
         result = self.client_post("/json/scheduled_messages", payload)
         return result
 
+    def do_schedule_recurring_message(
+        self,
+        *,
+        recurrence_type: str,
+        recurrence_days: list[int] | dict[str, Any] | None,
+        scheduled_time: str,
+        timezone_name: str | None = None,
+        msg_type: str = "channel",
+        to: int | list[int] | list[str] | None = None,
+        content: str = "Recurring test message",
+    ) -> "TestHttpResponse":
+        self.login("hamlet")
+
+        if to is None:
+            to = self.get_stream_id("Verona")
+
+        payload = {
+            "type": msg_type,
+            "to": orjson.dumps(to).decode(),
+            "content": content,
+            "topic": "Test topic" if msg_type in ["stream", "channel"] else "",
+            "recurrence_type": recurrence_type,
+            "scheduled_time": scheduled_time,
+        }
+        if recurrence_days is not None:
+            payload["recurrence_days"] = orjson.dumps(recurrence_days).decode()
+        if timezone_name is not None:
+            payload["timezone"] = timezone_name
+
+        return self.client_post("/json/scheduled_messages", payload)
+
     def test_schedule_message(self) -> None:
         content = "Test message"
         scheduled_delivery_timestamp = int(time.time() + 86400)
@@ -68,6 +209,7 @@ class ScheduledMessageTest(ZulipTestCase):
         )
         scheduled_message = self.last_scheduled_message()
         self.assert_json_success(result)
+        self.assertEqual(scheduled_message.next_delivery, scheduled_message.scheduled_timestamp)
         self.assertEqual(scheduled_message.content, "Test message 1")
         self.assertEqual(scheduled_message.rendered_content, "<p>Test message 1</p>")
         self.assertEqual(scheduled_message.topic_name(), "Test topic")
@@ -96,6 +238,129 @@ class ScheduledMessageTest(ZulipTestCase):
             "direct", [othello.email], f"{content} 4", scheduled_delivery_timestamp
         )
         self.assert_json_error(result, 'to["int"] is not an integer')
+
+    def test_schedule_daily_recurring_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            result = self.do_schedule_recurring_message(
+                recurrence_type="daily",
+                recurrence_days=[],
+                scheduled_time="11:00",
+                timezone_name="America/New_York",
+            )
+            data = self.assert_json_success(result)
+
+            scheduled_message = ScheduledMessage.objects.get(id=data["scheduled_message_id"])
+            self.assertEqual(scheduled_message.recurrence_type, ScheduledMessage.DAILY)
+            self.assertEqual(scheduled_message.recurrence_days, [])
+            self.assertEqual(scheduled_message.scheduled_time, datetime_time(11, 0))
+            self.assertEqual(scheduled_message.timezone, "America/New_York")
+            self.assertEqual(
+                scheduled_message.next_delivery,
+                datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC),
+            )
+            self.assertEqual(scheduled_message.scheduled_timestamp, scheduled_message.next_delivery)
+
+            fetch_result = self.client_get("/json/scheduled_messages")
+            scheduled_messages = self.assert_json_success(fetch_result)["scheduled_messages"]
+            self.assert_length(scheduled_messages, 1)
+            self.assertEqual(scheduled_messages[0]["recurrence_type"], "daily")
+            self.assertEqual(scheduled_messages[0]["recurrence_days"], [])
+            self.assertEqual(scheduled_messages[0]["scheduled_time"], "11:00")
+            self.assertEqual(scheduled_messages[0]["timezone"], "America/New_York")
+            self.assertEqual(
+                scheduled_messages[0]["scheduled_delivery_timestamp"],
+                int(datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC).timestamp()),
+            )
+
+    def test_schedule_weekly_recurring_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            result = self.do_schedule_recurring_message(
+                recurrence_type="weekly",
+                recurrence_days=[0, 2, 4],
+                scheduled_time="09:00",
+            )
+            data = self.assert_json_success(result)
+
+            scheduled_message = ScheduledMessage.objects.get(id=data["scheduled_message_id"])
+            self.assertEqual(scheduled_message.recurrence_type, ScheduledMessage.WEEKLY)
+            self.assertEqual(scheduled_message.recurrence_days, [0, 2, 4])
+            self.assertEqual(
+                scheduled_message.next_delivery,
+                datetime(2026, 1, 9, 9, 0, 0, tzinfo=UTC),
+            )
+
+    def test_schedule_monthly_recurring_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            result = self.do_schedule_recurring_message(
+                recurrence_type="monthly",
+                recurrence_days={"type": "calendar_day", "day": 15},
+                scheduled_time="09:00",
+            )
+            data = self.assert_json_success(result)
+
+            scheduled_message = ScheduledMessage.objects.get(id=data["scheduled_message_id"])
+            self.assertEqual(scheduled_message.recurrence_type, ScheduledMessage.MONTHLY)
+            self.assertEqual(
+                scheduled_message.recurrence_days, {"type": "calendar_day", "day": 15}
+            )
+            self.assertEqual(
+                scheduled_message.next_delivery,
+                datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC),
+            )
+
+    def test_schedule_weekly_recurring_message_requires_recurrence_days(self) -> None:
+        result = self.do_schedule_recurring_message(
+            recurrence_type="weekly",
+            recurrence_days=None,
+            scheduled_time="09:00",
+        )
+        self.assert_json_error(
+            result,
+            "recurrence_days is required for weekly and specific_days recurrence types.",
+        )
+
+    def test_schedule_monthly_recurring_message_rejects_invalid_rule(self) -> None:
+        result = self.do_schedule_recurring_message(
+            recurrence_type="monthly",
+            recurrence_days={"type": "bad_rule"},
+            scheduled_time="09:00",
+        )
+        self.assert_json_error(
+            result,
+            "monthly recurrence_days must have type 'calendar_day' or 'ordinal_weekday', got 'bad_rule'.",
+        )
+
+    def create_recurring_scheduled_message(
+        self,
+        *,
+        next_delivery: datetime,
+        recurrence_type: str = ScheduledMessage.DAILY,
+        recurrence_days: list[int] | dict[str, Any] | None = None,
+        scheduled_time: datetime_time = datetime_time(9, 0),
+        topic: str = "Test topic",
+    ) -> ScheduledMessage:
+        sender = self.example_user("hamlet")
+        stream_id = self.get_stream_id("Verona")
+        recipient = Recipient.objects.get(type=Recipient.STREAM, type_id=stream_id)
+        stream = Stream.objects.get(id=stream_id)
+
+        return ScheduledMessage.objects.create(
+            sender=sender,
+            recipient=recipient,
+            subject=topic,
+            content="Automated recurring test message",
+            rendered_content="<p>Automated recurring test message</p>",
+            sending_client=get_client("test"),
+            stream=stream,
+            realm=sender.realm,
+            scheduled_timestamp=next_delivery,
+            next_delivery=next_delivery,
+            read_by_sender=True,
+            recurrence_type=recurrence_type,
+            recurrence_days=recurrence_days if recurrence_days is not None else [],
+            scheduled_time=scheduled_time,
+            delivery_type=ScheduledMessage.SEND_LATER,
+        )
 
     def create_scheduled_message(self) -> None:
         content = "Test message"
@@ -163,6 +428,68 @@ class ScheduledMessageTest(ZulipTestCase):
         stream_id = self.get_stream_id("Verona")
         recipient = Recipient.objects.get(type=Recipient.STREAM, type_id=stream_id)
         self.assert_scheduled_message_delivered(scheduled_message, recipient)
+
+    def test_successful_deliver_daily_recurring_scheduled_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            scheduled_message = self.create_recurring_scheduled_message(
+                next_delivery=datetime(2026, 1, 7, 9, 59, 0, tzinfo=UTC),
+                recurrence_type=ScheduledMessage.DAILY,
+                recurrence_days=[],
+                scheduled_time=datetime_time(11, 0),
+            )
+
+            result = try_deliver_one_scheduled_message()
+            self.assertTrue(result)
+
+            scheduled_message.refresh_from_db()
+            self.assertFalse(scheduled_message.delivered)
+            self.assertFalse(scheduled_message.failed)
+            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC))
+            self.assertIsInstance(scheduled_message.delivered_message_id, int)
+
+    def test_successful_deliver_weekly_recurring_scheduled_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            scheduled_message = self.create_recurring_scheduled_message(
+                next_delivery=datetime(2026, 1, 7, 9, 59, 0, tzinfo=UTC),
+                recurrence_type=ScheduledMessage.WEEKLY,
+                recurrence_days=[2],
+                scheduled_time=datetime_time(9, 0),
+            )
+
+            result = try_deliver_one_scheduled_message()
+            self.assertTrue(result)
+
+            scheduled_message.refresh_from_db()
+            self.assertFalse(scheduled_message.delivered)
+            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 14, 9, 0, 0, tzinfo=UTC))
+
+    def test_successful_deliver_monthly_recurring_scheduled_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            scheduled_message = self.create_recurring_scheduled_message(
+                next_delivery=datetime(2026, 1, 7, 9, 59, 0, tzinfo=UTC),
+                recurrence_type=ScheduledMessage.MONTHLY,
+                recurrence_days={"type": "calendar_day", "day": 15},
+                scheduled_time=datetime_time(9, 0),
+            )
+
+            result = try_deliver_one_scheduled_message()
+            self.assertTrue(result)
+
+            scheduled_message.refresh_from_db()
+            self.assertFalse(scheduled_message.delivered)
+            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC))
+
+    def test_worker_skips_future_recurring_scheduled_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            self.create_recurring_scheduled_message(
+                next_delivery=datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC),
+                recurrence_type=ScheduledMessage.DAILY,
+                recurrence_days=[],
+                scheduled_time=datetime_time(11, 0),
+            )
+
+            result = try_deliver_one_scheduled_message()
+            self.assertFalse(result)
 
     def test_successful_deliver_direct_scheduled_message_to_other(self) -> None:
         # No scheduled message

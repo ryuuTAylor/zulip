@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Annotated, Any
 
 from django.http import HttpRequest, HttpResponse
@@ -17,8 +18,11 @@ from zerver.lib.recipient_parsing import extract_direct_message_recipient_ids, e
 from zerver.lib.request import RequestNotes
 from zerver.lib.response import json_success
 from zerver.lib.scheduled_messages import (
+    compute_next_delivery,
     get_undelivered_reminders,
     get_undelivered_scheduled_messages,
+    parse_scheduled_time,
+    validate_recurrence_days,
 )
 from zerver.lib.timestamp import timestamp_to_datetime
 from zerver.lib.typed_endpoint import (
@@ -30,6 +34,13 @@ from zerver.lib.typed_endpoint import (
 )
 from zerver.lib.typed_endpoint_validators import check_string_in_validator
 from zerver.models import Message, ScheduledMessage, UserProfile
+
+VALID_RECURRENCE_TYPES = [
+    ScheduledMessage.DAILY,
+    ScheduledMessage.WEEKLY,
+    ScheduledMessage.SPECIFIC_DAYS,
+    ScheduledMessage.MONTHLY,
+]
 
 
 @typed_endpoint_without_parameters
@@ -144,7 +155,14 @@ def create_scheduled_message_backend(
         Annotated[str, check_string_in_validator(Message.API_RECIPIENT_TYPES)],
         ApiParamConfig("type"),
     ],
-    scheduled_delivery_timestamp: Json[int],
+    scheduled_delivery_timestamp: Json[int] | None = None,
+    recurrence_type: Annotated[
+        Annotated[str, check_string_in_validator(VALID_RECURRENCE_TYPES)] | None,
+        ApiParamConfig("recurrence_type"),
+    ] = None,
+    recurrence_days: Json[list[int] | dict[str, str | int]] | None = None,
+    scheduled_time: str | None = None,
+    timezone: str | None = None,
     topic_name: OptionalTopic = None,
 ) -> HttpResponse:
     recipient_type_name = req_type
@@ -159,9 +177,51 @@ def create_scheduled_message_backend(
         # message (created, schdeduled, drafts) objects/dicts.
         recipient_type_name = "stream"
 
-    deliver_at = timestamp_to_datetime(scheduled_delivery_timestamp)
-    if deliver_at <= timezone_now():
-        raise DeliveryTimeNotInFutureError
+    deliver_at: datetime
+    validated_recurrence_days: list[int] | dict[str, str | int] | None = None
+    parsed_scheduled_time = None
+    timezone_name = timezone.strip() if timezone is not None else None
+    if timezone_name == "":
+        timezone_name = None
+
+    has_recurrence_fields = any(
+        value is not None for value in (recurrence_type, recurrence_days, scheduled_time, timezone)
+    )
+
+    if recurrence_type is None:
+        if has_recurrence_fields:
+            raise JsonableError(
+                _("recurrence_type is required when scheduling a recurring message.")
+            )
+        if scheduled_delivery_timestamp is None:
+            raise JsonableError(_("scheduled_delivery_timestamp is required."))
+        deliver_at = timestamp_to_datetime(scheduled_delivery_timestamp)
+        if deliver_at <= timezone_now():
+            raise DeliveryTimeNotInFutureError
+    else:
+        if scheduled_delivery_timestamp is not None:
+            raise JsonableError(
+                _("scheduled_delivery_timestamp is only supported for one-time scheduled messages.")
+            )
+        if scheduled_time is None:
+            raise JsonableError(_("scheduled_time is required for recurring scheduled messages."))
+        try:
+            parsed_scheduled_time = parse_scheduled_time(scheduled_time)
+        except ValueError as e:
+            raise JsonableError(_(str(e))) from e
+
+        validated_recurrence_days = recurrence_days if recurrence_days is not None else []
+        try:
+            validate_recurrence_days(validated_recurrence_days, recurrence_type)
+        except ValueError as e:
+            raise JsonableError(_(str(e))) from e
+
+        deliver_at = compute_next_delivery(
+            recurrence_type,
+            validated_recurrence_days,
+            parsed_scheduled_time,
+            timezone_now(),
+        )
 
     sender = user_profile
     client = RequestNotes.get_notes(request).client
@@ -183,6 +243,10 @@ def create_scheduled_message_backend(
         deliver_at,
         realm=user_profile.realm,
         read_by_sender=read_by_sender,
+        recurrence_type=recurrence_type,
+        recurrence_days=validated_recurrence_days,
+        scheduled_time=parsed_scheduled_time,
+        timezone=timezone_name,
     )
     return json_success(request, data={"scheduled_message_id": scheduled_message_id})
 

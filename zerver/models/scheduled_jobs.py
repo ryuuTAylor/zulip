@@ -5,7 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import CASCADE, Q
 from django.utils.timezone import now as timezone_now
-from typing_extensions import override
+from typing_extensions import NotRequired, override
 
 from zerver.lib.display_recipient import get_recipient_ids
 from zerver.lib.timestamp import datetime_to_timestamp
@@ -129,6 +129,10 @@ class APIScheduledStreamMessageDict(TypedDict):
     failed: bool
     batch_group_id: str | None
     batch_label: str | None
+    recurrence_type: NotRequired[str]
+    recurrence_days: NotRequired[list[int] | dict[str, str | int]]
+    scheduled_time: NotRequired[str]
+    timezone: NotRequired[str | None]
 
 
 class APIScheduledDirectMessageDict(TypedDict):
@@ -141,6 +145,10 @@ class APIScheduledDirectMessageDict(TypedDict):
     failed: bool
     batch_group_id: str | None
     batch_label: str | None
+    recurrence_type: NotRequired[str]
+    recurrence_days: NotRequired[list[int] | dict[str, str | int]]
+    scheduled_time: NotRequired[str]
+    timezone: NotRequired[str | None]
 
 
 class APIReminderDirectMessageDict(TypedDict):
@@ -198,6 +206,58 @@ class ScheduledMessage(models.Model):
         default=SEND_LATER,
     )
 
+    # Recurrence fields. A row with recurrence_type == NULL is a
+    # one-time scheduled message (the original behavior); fields below
+    # are ignored. A non-NULL recurrence_type turns this row into a
+    # recurring job: after each successful delivery, next_delivery is
+    # recomputed from scheduled_time + recurrence_days and the row is
+    # left undelivered to fire again.
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    SPECIFIC_DAYS = "specific_days"
+    MONTHLY = "monthly"
+
+    RECURRENCE_TYPES = (
+        (DAILY, "Daily"),
+        (WEEKLY, "Weekly"),
+        (SPECIFIC_DAYS, "Specific days"),
+        (MONTHLY, "Monthly"),
+    )
+
+    recurrence_type = models.CharField(
+        max_length=20,
+        choices=RECURRENCE_TYPES,
+        null=True,
+    )
+
+    # Recurrence rule data; interpretation depends on recurrence_type:
+    #   daily                  — empty list []
+    #   weekly / specific_days — list of weekday ints (0=Monday … 6=Sunday)
+    #   monthly                — dict with one of two shapes:
+    #     {"type": "calendar_day", "day": <int>}
+    #         day 1–31, or -1 for the last day of the month; days beyond
+    #         the month's length are clamped to the last day of that month.
+    #     {"type": "ordinal_weekday", "ordinal": <int>, "weekday": <int>}
+    #         ordinal 1–4 for the nth occurrence, or -1 for the last;
+    #         weekday 0=Monday … 6=Sunday.
+    recurrence_days = models.JSONField(null=True)
+
+    # Time of day to fire. Combined with timezone (or UTC if NULL) and
+    # recurrence_days to compute next_delivery after each send.
+    scheduled_time = models.TimeField(null=True)
+
+    # IANA timezone name (e.g. "America/New_York"). NULL means UTC,
+    # which is the only timezone initially supported; the column is in
+    # place so Layer 2 can add timezone awareness without another
+    # migration.
+    timezone = models.CharField(max_length=100, null=True)
+
+    # Authoritative next-firing UTC datetime for both one-time and
+    # recurring messages. For one-time rows this equals
+    # scheduled_timestamp; for recurring rows it advances on each
+    # delivery. The delivery worker queries this field.
+    next_delivery = models.DateTimeField(null=True)
+
     class Meta:
         indexes = [
             # We expect a large number of delivered scheduled messages
@@ -222,6 +282,17 @@ class ScheduledMessage(models.Model):
                     delivered=False,
                 ),
             ),
+            # Worker query index: upcoming deliveries ordered by the
+            # next_delivery field used once the delivery logic is
+            # unified (Commit 2 of the unification work).
+            models.Index(
+                name="zerver_scheduled_messages_by_next_delivery",
+                fields=["next_delivery"],
+                condition=Q(
+                    delivered=False,
+                    failed=False,
+                ),
+            ),
         ]
 
     @override
@@ -242,6 +313,7 @@ class ScheduledMessage(models.Model):
 
     def to_dict(self) -> APIScheduledStreamMessageDict | APIScheduledDirectMessageDict:
         recipient, recipient_type_str = get_recipient_ids(self.recipient, self.sender.id)
+        delivery_timestamp = self.next_delivery or self.scheduled_timestamp
 
         batch_group_id_str = str(self.batch_group_id) if self.batch_group_id is not None else None
 
@@ -249,33 +321,51 @@ class ScheduledMessage(models.Model):
             # The topic for direct messages should always be "\x07".
             assert self.topic_name() == Message.DM_TOPIC
 
-            return APIScheduledDirectMessageDict(
+            scheduled_message_dict = APIScheduledDirectMessageDict(
                 scheduled_message_id=self.id,
                 to=recipient,
                 type=recipient_type_str,
                 content=self.content,
                 rendered_content=self.rendered_content,
-                scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+                scheduled_delivery_timestamp=datetime_to_timestamp(delivery_timestamp),
                 failed=self.failed,
                 batch_group_id=batch_group_id_str,
                 batch_label=self.batch_label,
             )
+            if self.recurrence_type is not None:
+                scheduled_message_dict["recurrence_type"] = self.recurrence_type
+                scheduled_message_dict["recurrence_days"] = self.recurrence_days
+                assert self.scheduled_time is not None
+                scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+                    timespec="minutes"
+                )
+                scheduled_message_dict["timezone"] = self.timezone
+            return scheduled_message_dict
 
         # The recipient for stream messages should always just be the unique stream ID.
         assert len(recipient) == 1
 
-        return APIScheduledStreamMessageDict(
+        scheduled_message_dict = APIScheduledStreamMessageDict(
             scheduled_message_id=self.id,
             to=recipient[0],
             type=recipient_type_str,
             content=self.content,
             rendered_content=self.rendered_content,
             topic=self.topic_name(),
-            scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
+            scheduled_delivery_timestamp=datetime_to_timestamp(delivery_timestamp),
             failed=self.failed,
             batch_group_id=batch_group_id_str,
             batch_label=self.batch_label,
         )
+        if self.recurrence_type is not None:
+            scheduled_message_dict["recurrence_type"] = self.recurrence_type
+            scheduled_message_dict["recurrence_days"] = self.recurrence_days
+            assert self.scheduled_time is not None
+            scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+                timespec="minutes"
+            )
+            scheduled_message_dict["timezone"] = self.timezone
+        return scheduled_message_dict
 
     def to_reminder_dict(self) -> APIReminderDirectMessageDict:
         assert self.reminder_target_message_id is not None
