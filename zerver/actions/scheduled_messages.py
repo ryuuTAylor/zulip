@@ -52,6 +52,10 @@ def check_schedule_message(
     realm: Realm | None = None,
     *,
     read_by_sender: bool | None = None,
+    recurrence_type: str | None = None,
+    recurrence_days: list[int] | dict[str, str | int] | None = None,
+    scheduled_time: time | None = None,
+    timezone: str | None = None,
     skip_events: bool = False,
 ) -> int:
     addressee = Addressee.legacy_build(sender, recipient_type_name, message_to, topic_name, realm)
