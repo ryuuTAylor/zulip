@@ -175,18 +175,38 @@ def do_schedule_batch_messages(
     Each destination dict must be one of:
       {"type": "stream", "stream_id": <int>, "topic": <str>}
       {"type": "direct", "user_ids": [<int>, ...]}
+
+    All destinations are validated before any rows are written. If any
+    destination fails validation (e.g. sender not subscribed, stream not
+    found), a JsonableError is raised that names the failing destination
+    index and type so the caller can surface a useful error message.
     """
     send_requests: list[SendMessageRequest] = []
-    for dest in destinations:
+    for i, dest in enumerate(destinations, start=1):
         dest_type = dest["type"]
         if dest_type == "stream":
             addressee = Addressee.for_stream_id(dest["stream_id"], dest["topic"])
+            dest_label = f"channel {dest['stream_id']} / {dest['topic']!r}"
         else:
             addressee = Addressee.for_user_ids(dest["user_ids"], realm)
+            dest_label = f"DM to user IDs {dest['user_ids']}"
 
-        send_request = check_message(sender, client, addressee, content, realm=realm)
+        try:
+            send_request = check_message(sender, client, addressee, content, realm=realm)
+        except JsonableError as exc:
+            raise JsonableError(
+                _(
+                    "Destination {index} ({dest_label}) is invalid: {error}"
+                ).format(index=i, dest_label=dest_label, error=exc.msg)
+            ) from exc
+
         send_request.deliver_at = deliver_at
         send_requests.append(send_request)
+
+    # Defensive guard: the view-layer validation should have caught an empty
+    # list already, but make the invariant explicit here.
+    if not send_requests:
+        raise JsonableError(_("No valid destinations found."))  # nocoverage
 
     group_id = uuid.uuid4()
     scheduled_ids = do_schedule_messages(

@@ -28,12 +28,9 @@
         <div id="batch-destinations-list"></div>
 
         <div id="batch-add-stream-form" class="rsm-add-dest-form">
-            <input
-                id="batch-stream-name-input"
-                type="text"
-                class="modal_text_input"
-                placeholder="{{t 'Channel name' }}"
-            />
+            <select id="batch-stream-select" class="modal-select">
+                <option value="">{{t "— Select a channel —" }}</option>
+            </select>
             <input
                 id="batch-topic-input"
                 type="text"
@@ -46,12 +43,9 @@
         </div>
 
         <div id="batch-add-direct-form" class="rsm-add-dest-form">
-            <input
-                id="batch-dm-emails-input"
-                type="text"
-                class="modal_text_input"
-                placeholder="{{t 'Emails, comma-separated' }}"
-            />
+            <div id="batch-dm-pill-container" class="pill-container">
+                <div class="input" contenteditable="true" tabindex="0"></div>
+            </div>
             <button type="button" id="batch-add-direct-btn" class="button small rounded">
                 {{t "+ Add direct message" }}
             </button>
