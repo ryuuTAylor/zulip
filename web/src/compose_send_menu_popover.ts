@@ -278,8 +278,10 @@ function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance)
     }
     $monthly_weekday_input.val("MO");
 
-    const get_selected_monthly_mode = (): string =>
-        String($monthly_mode_inputs.filter(":checked").first().val() ?? "day");
+    const get_selected_monthly_mode = (): string => {
+        const selected_monthly_mode = $monthly_mode_inputs.filter(":checked").first().val();
+        return typeof selected_monthly_mode === "string" ? selected_monthly_mode : "day";
+    };
 
     const refresh_monthly_selector = (): void => {
         const selected_monthly_mode = get_selected_monthly_mode();
@@ -400,6 +402,8 @@ function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance)
                             banner_text: $t({
                                 defaultMessage: "Your recurring message has been scheduled.",
                             }),
+                            classname:
+                                compose_banner.CLASSNAMES.message_scheduled_success_compose_banner,
                         }),
                     ),
                     $("#compose_banners"),
@@ -446,8 +450,12 @@ export function open_schedule_message_menu(
         placement: remind_message_id !== undefined ? "bottom" : "top",
         hideOnClick: false,
         onClickOutside(instance, event) {
+            if (!(event.target instanceof Element)) {
+                instance.hide();
+                return;
+            }
             const clicked_in_typeahead =
-                $(event.target as HTMLElement).closest(".typeahead.dropdown-menu").length > 0;
+                $(event.target).closest(".typeahead.dropdown-menu").length > 0;
             if (clicked_in_typeahead) {
                 return;
             }

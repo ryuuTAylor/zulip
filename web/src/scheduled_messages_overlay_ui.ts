@@ -85,12 +85,12 @@ export function handle_keyboard_events(event_key: string): void {
     messages_overlay_ui.modals_handle_events(event_key, keyboard_handling_context);
 }
 
-function format(scheduled_messages: ScheduledMessage[]): ScheduledMessageRenderContext[] {
-    const formatted_scheduled_msgs = [];
-    const sorted_scheduled_messages = sort_scheduled_messages(scheduled_messages);
+function format(all_scheduled_messages: ScheduledMessage[]): ScheduledMessageRenderContext[] {
+    const formatted_scheduled_msgs: ScheduledMessageRenderContext[] = [];
+    const sorted_scheduled_messages = sort_scheduled_messages(all_scheduled_messages);
 
     for (const scheduled_msg of sorted_scheduled_messages) {
-        let scheduled_msg_render_context;
+        let scheduled_msg_render_context: ScheduledMessageRenderContext;
         const formatted_send_at_time =
             scheduled_messages.format_scheduled_delivery_label(scheduled_msg);
         if (scheduled_msg.type === "stream") {
