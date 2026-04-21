@@ -1,3 +1,4 @@
+import uuid
 from typing import TypedDict
 
 from django.conf import settings
@@ -126,6 +127,8 @@ class APIScheduledStreamMessageDict(TypedDict):
     topic: str
     scheduled_delivery_timestamp: int
     failed: bool
+    batch_group_id: str | None
+    batch_label: str | None
 
 
 class APIScheduledDirectMessageDict(TypedDict):
@@ -136,6 +139,8 @@ class APIScheduledDirectMessageDict(TypedDict):
     rendered_content: str
     scheduled_delivery_timestamp: int
     failed: bool
+    batch_group_id: str | None
+    batch_label: str | None
 
 
 class APIReminderDirectMessageDict(TypedDict):
@@ -172,6 +177,13 @@ class ScheduledMessage(models.Model):
     # moment arrived.
     failed = models.BooleanField(default=False)
     failure_message = models.TextField(null=True)
+
+    # Batch scheduling: rows sharing the same batch_group_id were created
+    # together as a single logical "send to multiple destinations" action.
+    # Null for ordinary (non-batch) scheduled messages.
+    batch_group_id = models.UUIDField(null=True, default=None, db_index=True)
+    # Optional human-readable name for the batch, set by the user at creation.
+    batch_label = models.TextField(null=True, blank=True, default=None)
 
     SEND_LATER = 1
     REMIND = 2
@@ -231,6 +243,8 @@ class ScheduledMessage(models.Model):
     def to_dict(self) -> APIScheduledStreamMessageDict | APIScheduledDirectMessageDict:
         recipient, recipient_type_str = get_recipient_ids(self.recipient, self.sender.id)
 
+        batch_group_id_str = str(self.batch_group_id) if self.batch_group_id is not None else None
+
         if recipient_type_str == "private":
             # The topic for direct messages should always be "\x07".
             assert self.topic_name() == Message.DM_TOPIC
@@ -243,6 +257,8 @@ class ScheduledMessage(models.Model):
                 rendered_content=self.rendered_content,
                 scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
                 failed=self.failed,
+                batch_group_id=batch_group_id_str,
+                batch_label=self.batch_label,
             )
 
         # The recipient for stream messages should always just be the unique stream ID.
@@ -257,6 +273,8 @@ class ScheduledMessage(models.Model):
             topic=self.topic_name(),
             scheduled_delivery_timestamp=datetime_to_timestamp(self.scheduled_timestamp),
             failed=self.failed,
+            batch_group_id=batch_group_id_str,
+            batch_label=self.batch_label,
         )
 
     def to_reminder_dict(self) -> APIReminderDirectMessageDict:
