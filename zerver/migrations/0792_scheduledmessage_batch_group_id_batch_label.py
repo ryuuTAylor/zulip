@@ -4,7 +4,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("zerver", "0789_merge_20260323_2256"),
+        ("zerver", "0791_merge_recurring_scheduled_messages"),
     ]
 
     operations = [
