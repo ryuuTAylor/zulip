@@ -1,6 +1,8 @@
 import logging
+import uuid
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import Any
 
 from django.conf import settings
 from django.db import transaction
@@ -104,6 +106,8 @@ def do_schedule_messages(
     read_by_sender: bool = False,
     skip_events: bool = False,
     delivery_type: int,
+    batch_group_id: uuid.UUID | None = None,
+    batch_label: str | None = None,
 ) -> list[int]:
     scheduled_messages: list[tuple[ScheduledMessage, SendMessageRequest]] = []
 
@@ -122,6 +126,8 @@ def do_schedule_messages(
         scheduled_message.scheduled_timestamp = send_request.deliver_at
         scheduled_message.read_by_sender = read_by_sender
         scheduled_message.delivery_type = delivery_type
+        scheduled_message.batch_group_id = batch_group_id
+        scheduled_message.batch_label = batch_label
 
         if delivery_type == ScheduledMessage.REMIND:
             scheduled_message.reminder_target_message_id = send_request.reminder_target_message_id
@@ -147,6 +153,51 @@ def do_schedule_messages(
             else:
                 notify_new_scheduled_message(sender, scheduled_message_objects)
     return [scheduled_message.id for scheduled_message, ignored in scheduled_messages]
+
+
+def do_schedule_batch_messages(
+    sender: UserProfile,
+    client: Client,
+    content: str,
+    destinations: list[dict[str, Any]],
+    deliver_at: datetime,
+    realm: Realm,
+    *,
+    batch_label: str | None = None,
+    read_by_sender: bool = False,
+) -> tuple[uuid.UUID, list[int]]:
+    """Schedule the same message to multiple destinations atomically.
+
+    Each destination produces one ScheduledMessage row. All rows share a
+    freshly-generated batch_group_id so they can be cancelled or listed
+    together. Returns (batch_group_id, list_of_scheduled_message_ids).
+
+    Each destination dict must be one of:
+      {"type": "stream", "stream_id": <int>, "topic": <str>}
+      {"type": "direct", "user_ids": [<int>, ...]}
+    """
+    send_requests: list[SendMessageRequest] = []
+    for dest in destinations:
+        dest_type = dest["type"]
+        if dest_type == "stream":
+            addressee = Addressee.for_stream_id(dest["stream_id"], dest["topic"])
+        else:
+            addressee = Addressee.for_user_ids(dest["user_ids"], realm)
+
+        send_request = check_message(sender, client, addressee, content, realm=realm)
+        send_request.deliver_at = deliver_at
+        send_requests.append(send_request)
+
+    group_id = uuid.uuid4()
+    scheduled_ids = do_schedule_messages(
+        send_requests,
+        sender,
+        read_by_sender=read_by_sender,
+        delivery_type=ScheduledMessage.SEND_LATER,
+        batch_group_id=group_id,
+        batch_label=batch_label,
+    )
+    return group_id, scheduled_ids
 
 
 def notify_update_scheduled_message(
