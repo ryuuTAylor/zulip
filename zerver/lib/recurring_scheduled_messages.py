@@ -158,6 +158,7 @@ def compute_next_delivery(
         return candidate
 
     if recurrence_type == RecurringScheduledMessage.MONTHLY:
+        validate_monthly_rule(recurrence_days)
         if not isinstance(recurrence_days, dict):
             raise ValueError("monthly recurrence_days must be a dict.")
         rule_type = recurrence_days.get("type")
