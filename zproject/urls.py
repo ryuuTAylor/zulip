@@ -180,6 +180,8 @@ from zerver.views.saved_snippets import (
     get_saved_snippets,
 )
 from zerver.views.scheduled_messages import (
+    cancel_batch_scheduled_messages,
+    create_batch_scheduled_messages,
     create_scheduled_message_backend,
     delete_scheduled_messages,
     fetch_reminders,
@@ -416,6 +418,12 @@ v1_api_and_json_patterns = [
         "scheduled_messages/<int:scheduled_message_id>",
         DELETE=delete_scheduled_messages,
         PATCH=update_scheduled_message_backend,
+    ),
+    # batch_scheduled_messages -> zerver.views.scheduled_messages
+    rest_path("batch_scheduled_messages", POST=create_batch_scheduled_messages),
+    rest_path(
+        "batch_scheduled_messages/<batch_group_id>",
+        DELETE=cancel_batch_scheduled_messages,
     ),
     # messages -> zerver.views.message*
     # GET returns messages, possibly filtered, POST sends a message

@@ -1,14 +1,16 @@
+import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from django.http import HttpRequest, HttpResponse
 from django.utils.timezone import now as timezone_now
 from django.utils.translation import gettext as _
-from pydantic import Json, NonNegativeInt
+from pydantic import Json, NonNegativeInt, StringConstraints
 
 from zerver.actions.scheduled_messages import (
     check_schedule_message,
     delete_scheduled_message,
+    do_schedule_batch_messages,
     edit_scheduled_message,
 )
 from zerver.lib.exceptions import DeliveryTimeNotInFutureError, JsonableError
@@ -247,3 +249,117 @@ def create_scheduled_message_backend(
         timezone=timezone_name,
     )
     return json_success(request, data={"scheduled_message_id": scheduled_message_id})
+
+
+def _validate_batch_destinations(destinations: list[dict[str, Any]]) -> None:
+    """Validate that every entry in destinations is a well-formed stream or direct destination."""
+    if not destinations:
+        raise JsonableError(_("destinations must not be empty."))
+
+    for dest in destinations:
+        dest_type = dest.get("type")
+
+        if dest_type == "stream":
+            if not isinstance(dest.get("stream_id"), int):
+                raise JsonableError(_("Each stream destination must include an integer stream_id."))
+            if not isinstance(dest.get("topic"), str) or not dest["topic"].strip():
+                raise JsonableError(_("Each stream destination must include a non-empty topic."))
+
+        elif dest_type == "direct":
+            user_ids = dest.get("user_ids")
+            if not isinstance(user_ids, list) or not user_ids:
+                raise JsonableError(
+                    _("Each direct destination must include a non-empty user_ids list.")
+                )
+            if not all(isinstance(uid, int) for uid in user_ids):
+                raise JsonableError(_("user_ids must be a list of integers."))
+
+        else:
+            raise JsonableError(
+                _("Each destination must have type 'stream' or 'direct'.")
+            )
+
+
+@typed_endpoint
+def create_batch_scheduled_messages(
+    request: HttpRequest,
+    user_profile: UserProfile,
+    *,
+    content: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=10000, strip_whitespace=True),
+    ],
+    destinations: Json[list[dict[str, Any]]],
+    scheduled_delivery_timestamp: Json[int],
+    batch_label: Annotated[str | None, StringConstraints(max_length=200)] = None,
+    read_by_sender: Json[bool] | None = None,
+) -> HttpResponse:
+    """Create a batch of scheduled messages — one per destination — sharing a single batch_group_id."""
+    _validate_batch_destinations(destinations)
+
+    deliver_at = timestamp_to_datetime(scheduled_delivery_timestamp)
+    if deliver_at <= timezone_now():
+        raise DeliveryTimeNotInFutureError
+
+    client = RequestNotes.get_notes(request).client
+    assert client is not None
+
+    if read_by_sender is None:
+        read_by_sender = client.default_read_by_sender()
+
+    group_id, scheduled_ids = do_schedule_batch_messages(
+        sender=user_profile,
+        client=client,
+        content=content,
+        destinations=destinations,
+        deliver_at=deliver_at,
+        realm=user_profile.realm,
+        batch_label=batch_label,
+        read_by_sender=read_by_sender,
+    )
+    return json_success(
+        request,
+        data={
+            "batch_group_id": str(group_id),
+            "scheduled_message_ids": scheduled_ids,
+            "count": len(scheduled_ids),
+        },
+    )
+
+
+@typed_endpoint
+def cancel_batch_scheduled_messages(
+    request: HttpRequest,
+    user_profile: UserProfile,
+    *,
+    batch_group_id: PathOnly[str],
+) -> HttpResponse:
+    """Cancel all pending scheduled messages belonging to a batch_group_id.
+
+    Only succeeds if the requesting user is the sender of every row in the batch.
+    """
+    try:
+        group_uuid = uuid.UUID(batch_group_id)
+    except ValueError:
+        raise JsonableError(_("Invalid batch_group_id."))
+
+    rows = ScheduledMessage.objects.filter(
+        batch_group_id=group_uuid,
+        delivered=False,
+        failed=False,
+    )
+
+    if not rows.exists():
+        raise JsonableError(_("No pending scheduled messages found for this batch."))
+
+    # Ensure the caller owns every row in the batch.
+    if rows.exclude(sender=user_profile).exists():
+        raise JsonableError(
+            _("You do not have permission to cancel this batch.")
+        )
+
+    cancelled_count = rows.count()
+    # Mark as delivered=True so the worker skips them and they drop off the list.
+    rows.update(delivered=True)
+
+    return json_success(request, data={"cancelled_count": cancelled_count})

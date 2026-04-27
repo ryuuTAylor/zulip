@@ -6,6 +6,7 @@ import render_compose_banner from "../templates/compose_banner/compose_banner.hb
 import render_schedule_message_popover from "../templates/popovers/schedule_message_popover.hbs";
 import render_send_later_popover from "../templates/popovers/send_later_popover.hbs";
 
+import * as batch_scheduled_messages_ui from "./batch_scheduled_messages_ui.ts";
 import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 import * as compose from "./compose.ts";
@@ -685,6 +686,10 @@ export function initialize(): void {
             $popper.one("click", ".open_send_later_modal", () => {
                 popover_menus.hide_current_popover_if_visible(instance);
                 open_schedule_message_menu(undefined, util.the($("#send_later i")));
+            });
+            $popper.one("click", ".open_batch_schedule_modal", () => {
+                popover_menus.hide_current_popover_if_visible(instance);
+                batch_scheduled_messages_ui.open_batch_modal();
             });
             $popper.one("click", ".compose_new_message", () => {
                 drafts.update_draft();

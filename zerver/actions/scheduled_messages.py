@@ -1,6 +1,8 @@
 import logging
+import uuid
 from collections.abc import Sequence
 from datetime import datetime, time, timedelta
+from typing import Any
 
 from django.conf import settings
 from django.db import transaction
@@ -120,6 +122,8 @@ def do_schedule_messages(
     timezone: str | None = None,
     skip_events: bool = False,
     delivery_type: int,
+    batch_group_id: uuid.UUID | None = None,
+    batch_label: str | None = None,
 ) -> list[int]:
     scheduled_messages: list[tuple[ScheduledMessage, SendMessageRequest]] = []
 
@@ -139,6 +143,8 @@ def do_schedule_messages(
         scheduled_message.next_delivery = send_request.deliver_at
         scheduled_message.read_by_sender = read_by_sender
         scheduled_message.delivery_type = delivery_type
+        scheduled_message.batch_group_id = batch_group_id
+        scheduled_message.batch_label = batch_label
         scheduled_message.recurrence_type = recurrence_type
         scheduled_message.recurrence_days = recurrence_days
         scheduled_message.scheduled_time = scheduled_time
@@ -168,6 +174,71 @@ def do_schedule_messages(
             else:
                 notify_new_scheduled_message(sender, scheduled_message_objects)
     return [scheduled_message.id for scheduled_message, ignored in scheduled_messages]
+
+
+def do_schedule_batch_messages(
+    sender: UserProfile,
+    client: Client,
+    content: str,
+    destinations: list[dict[str, Any]],
+    deliver_at: datetime,
+    realm: Realm,
+    *,
+    batch_label: str | None = None,
+    read_by_sender: bool = False,
+) -> tuple[uuid.UUID, list[int]]:
+    """Schedule the same message to multiple destinations atomically.
+
+    Each destination produces one ScheduledMessage row. All rows share a
+    freshly-generated batch_group_id so they can be cancelled or listed
+    together. Returns (batch_group_id, list_of_scheduled_message_ids).
+
+    Each destination dict must be one of:
+      {"type": "stream", "stream_id": <int>, "topic": <str>}
+      {"type": "direct", "user_ids": [<int>, ...]}
+
+    All destinations are validated before any rows are written. If any
+    destination fails validation (e.g. sender not subscribed, stream not
+    found), a JsonableError is raised that names the failing destination
+    index and type so the caller can surface a useful error message.
+    """
+    send_requests: list[SendMessageRequest] = []
+    for i, dest in enumerate(destinations, start=1):
+        dest_type = dest["type"]
+        if dest_type == "stream":
+            addressee = Addressee.for_stream_id(dest["stream_id"], dest["topic"])
+            dest_label = f"channel {dest['stream_id']} / {dest['topic']!r}"
+        else:
+            addressee = Addressee.for_user_ids(dest["user_ids"], realm)
+            dest_label = f"DM to user IDs {dest['user_ids']}"
+
+        try:
+            send_request = check_message(sender, client, addressee, content, realm=realm)
+        except JsonableError as exc:
+            raise JsonableError(
+                _(
+                    "Destination {index} ({dest_label}) is invalid: {error}"
+                ).format(index=i, dest_label=dest_label, error=exc.msg)
+            ) from exc
+
+        send_request.deliver_at = deliver_at
+        send_requests.append(send_request)
+
+    # Defensive guard: the view-layer validation should have caught an empty
+    # list already, but make the invariant explicit here.
+    if not send_requests:
+        raise JsonableError(_("No valid destinations found."))  # nocoverage
+
+    group_id = uuid.uuid4()
+    scheduled_ids = do_schedule_messages(
+        send_requests,
+        sender,
+        read_by_sender=read_by_sender,
+        delivery_type=ScheduledMessage.SEND_LATER,
+        batch_group_id=group_id,
+        batch_label=batch_label,
+    )
+    return group_id, scheduled_ids
 
 
 def notify_update_scheduled_message(
