@@ -330,14 +330,15 @@ function post_render_batch_modal(): void {
         remove_destination(idx);
     });
 
-    // Set the datetime minimum to now + 1 minute.
+    // Set the datetime minimum to now + 1 minute, formatted in local time.
+    // toISOString() returns UTC, but datetime-local inputs interpret the
+    // min attribute as local time, so we must format using local components.
     const now = new Date();
     now.setSeconds(0, 0);
     now.setMinutes(now.getMinutes() + 1);
-    $<HTMLInputElement>("#batch-scheduled-message-datetime").attr(
-        "min",
-        now.toISOString().slice(0, 16),
-    );
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    const local_min = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    $<HTMLInputElement>("#batch-scheduled-message-datetime").attr("min", local_min);
 }
 
 export function open_batch_modal(): void {
