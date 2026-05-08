@@ -51,6 +51,12 @@
                 <span class="popover-menu-label">{{t "Batch schedule to multiple destinations" }}</span>
             </a>
         </li>
+        <li role="none" class="link-item popover-menu-list-item">
+            <a role="menuitem" class="open_unified_schedule_modal popover-menu-link" tabindex="0">
+                <i class="popover-menu-icon zulip-icon zulip-icon-calendar-days" aria-hidden="true"></i>
+                <span class="popover-menu-label">{{t "Advanced schedule (template + recurrence + destinations)" }}</span>
+            </a>
+        </li>
         {{#if formatted_send_later_time}}
         <li role="none" class="link-item popover-menu-list-item">
             <a role="menuitem" class="send_later_selected_send_later_time popover-menu-link" tabindex="0">
