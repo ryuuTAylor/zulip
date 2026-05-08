@@ -240,23 +240,45 @@ export function get_recurring_schedule_request_data($popper: JQuery):
     };
 }
 
-function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
-    if ($popper.data("recurring-builder-initialized") === true) {
+/**
+ * Initialize the recurring-schedule form fields inside any jQuery root element
+ * ($root can be a popover, a modal, or any container holding the
+ * recurring_fields.hbs partial).
+ *
+ * This function only wires up the field interactions (show/hide conditional
+ * sections, populate option lists, update summary text). It does NOT attach a
+ * submit handler — callers are responsible for wiring their own submit logic
+ * after calling this function. That separation makes the function safe to use
+ * from both the send-later popover and the unified scheduled-message modal.
+ *
+ * The optional `destination_summary` argument, when provided, is written into
+ * `.recurring-builder-destination-summary`. Pass it for the popover (where the
+ * destination comes from the compose box); omit it for the modal (where the
+ * destination is managed separately by the destinations section).
+ */
+export function initialize_recurring_fields(
+    $root: JQuery,
+    destination_summary?: string,
+): void {
+    if ($root.data("recurring-builder-initialized") === true) {
         return;
     }
-    const $feedback = $popper.find(".recurring-builder-feedback");
-    $popper.data("recurring-builder-initialized", true);
-    const $frequency = $popper.find(".recurring-frequency-input");
-    const $weekly_options = $popper.find(".recurring-weekly-options");
-    const $monthly_options = $popper.find(".recurring-monthly-options");
-    const $monthday_input = $popper.find(".recurring-monthday-input");
-    const $monthly_ordinal_input = $popper.find(".recurring-monthly-ordinal-input");
-    const $monthly_weekday_input = $popper.find(".recurring-monthly-weekday-input");
-    const $monthly_mode_inputs = $popper.find<HTMLInputElement>(".recurring-monthly-mode");
-    const $short_month_note = $popper.find(".recurring-short-month-note");
-    const $monthly_summary = $popper.find(".recurring-monthly-summary");
-    const $destination_summary = $popper.find(".recurring-builder-destination-summary");
-    $destination_summary.text(get_compose_recurring_destination_summary());
+    $root.data("recurring-builder-initialized", true);
+
+    const $frequency = $root.find(".recurring-frequency-input");
+    const $weekly_options = $root.find(".recurring-weekly-options");
+    const $monthly_options = $root.find(".recurring-monthly-options");
+    const $monthday_input = $root.find(".recurring-monthday-input");
+    const $monthly_ordinal_input = $root.find(".recurring-monthly-ordinal-input");
+    const $monthly_weekday_input = $root.find(".recurring-monthly-weekday-input");
+    const $monthly_mode_inputs = $root.find<HTMLInputElement>(".recurring-monthly-mode");
+    const $short_month_note = $root.find(".recurring-short-month-note");
+    const $monthly_summary = $root.find(".recurring-monthly-summary");
+    const $destination_summary_el = $root.find(".recurring-builder-destination-summary");
+
+    if (destination_summary !== undefined) {
+        $destination_summary_el.text(destination_summary);
+    }
 
     for (let day = 1; day <= 31; day += 1) {
         $monthday_input.append(
@@ -345,6 +367,16 @@ function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance)
     });
     $monthly_ordinal_input.on("change", refresh_monthly_summary);
     $monthly_weekday_input.on("change", refresh_monthly_summary);
+}
+
+// Initializes the recurring builder inside the send-later popover and wires up
+// the popover-specific submit handler (which reads from the compose box and
+// posts to /json/scheduled_messages). External callers that want only the field
+// wiring should use initialize_recurring_fields instead.
+function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
+    initialize_recurring_fields($popper, get_compose_recurring_destination_summary());
+
+    const $feedback = $popper.find(".recurring-builder-feedback");
 
     $popper.on("click", ".submit-recurring-draft", (e) => {
         if (!compose_validate.validate(true)) {

@@ -186,6 +186,10 @@ def do_schedule_batch_messages(
     *,
     batch_label: str | None = None,
     read_by_sender: bool = False,
+    recurrence_type: str | None = None,
+    recurrence_days: list[int] | dict[str, str | int] | None = None,
+    scheduled_time: time | None = None,
+    timezone: str | None = None,
 ) -> tuple[uuid.UUID, list[int]]:
     """Schedule the same message to multiple destinations atomically.
 
@@ -201,6 +205,10 @@ def do_schedule_batch_messages(
     destination fails validation (e.g. sender not subscribed, stream not
     found), a JsonableError is raised that names the failing destination
     index and type so the caller can surface a useful error message.
+
+    When recurrence_type is supplied the resulting rows become recurring
+    scheduled messages; the delivery worker will advance next_delivery after
+    each successful send.
     """
     send_requests: list[SendMessageRequest] = []
     for i, dest in enumerate(destinations, start=1):
@@ -237,6 +245,10 @@ def do_schedule_batch_messages(
         delivery_type=ScheduledMessage.SEND_LATER,
         batch_group_id=group_id,
         batch_label=batch_label,
+        recurrence_type=recurrence_type,
+        recurrence_days=recurrence_days,
+        scheduled_time=scheduled_time,
+        timezone=timezone,
     )
     return group_id, scheduled_ids
 
