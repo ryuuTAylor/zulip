@@ -252,6 +252,18 @@ function set_datetime_min(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Repeat-checkbox toggle (shows recurrence form, hides datetime picker)
+// ---------------------------------------------------------------------------
+
+function wire_repeat_toggle(): void {
+    $("#unified-repeat-checkbox").on("change", function () {
+        const is_recurring = $(this).prop("checked") as boolean;
+        $("#unified-datetime-section").toggle(!is_recurring);
+        $("#unified-recurrence-section").toggle(is_recurring);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Form submission
 // ---------------------------------------------------------------------------
 
@@ -259,7 +271,6 @@ function submit_unified_form(): void {
     const content = (
         $<HTMLTextAreaElement>("#unified-scheduled-message-content").val() ?? ""
     ).trim();
-    const label = ($<HTMLInputElement>("#unified-scheduled-message-label").val() ?? "").trim();
 
     if (!content) {
         show_modal_error($t({defaultMessage: "Please enter a message."}));
@@ -271,27 +282,22 @@ function submit_unified_form(): void {
         return;
     }
 
-    const $modal_root = $("#unified-scheduled-message-modal");
-    const recurring_result = get_recurring_schedule_request_data($modal_root);
-
-    // Determine whether the user has chosen recurrence.
-    // get_recurring_schedule_request_data returns error_message when nothing is
-    // selected — that is treated as "no recurrence / one-time".
-    const has_recurrence =
-        !("error_message" in recurring_result) &&
-        recurring_result.recurrence_type !== undefined;
+    const is_recurring = $<HTMLInputElement>("#unified-repeat-checkbox").prop("checked") as boolean;
 
     const data: Record<string, unknown> = {
         content,
         destinations: JSON.stringify(pending_destinations),
     };
 
-    if (label) {
-        data["batch_label"] = label;
-    }
-
-    if (has_recurrence && !("error_message" in recurring_result)) {
-        // Recurring batch: forward recurrence fields to the extended batch endpoint.
+    if (is_recurring) {
+        // Recurring batch: validate and forward recurrence fields.
+        const recurring_result = get_recurring_schedule_request_data(
+            $("#unified-scheduled-message-modal"),
+        );
+        if ("error_message" in recurring_result) {
+            show_modal_error(recurring_result.error_message);
+            return;
+        }
         data["recurrence_type"] = recurring_result.recurrence_type;
         data["recurrence_days"] = recurring_result.recurrence_days;
         data["scheduled_time"] = recurring_result.scheduled_time;
@@ -302,10 +308,7 @@ function submit_unified_form(): void {
         );
         if (!datetime_val) {
             show_modal_error(
-                $t({
-                    defaultMessage:
-                        "Please choose a send time, or select a recurrence for recurring delivery.",
-                }),
+                $t({defaultMessage: "Please choose a send time."}),
             );
             return;
         }
@@ -329,9 +332,10 @@ function submit_unified_form(): void {
 
 function post_render_unified_modal(): void {
     // Wire recurrence fields (dropdowns, checkboxes, summary text).
-    // No destination_summary passed — the unified modal manages its own
-    // destinations section separately below.
     initialize_recurring_fields($("#unified-scheduled-message-modal"));
+
+    // Wire the Repeat checkbox — hidden until user opts in.
+    wire_repeat_toggle();
 
     // Set up saved-snippets dropdown to insert into the modal textarea.
     saved_snippets_ui.setup_saved_snippets_dropdown_widget(

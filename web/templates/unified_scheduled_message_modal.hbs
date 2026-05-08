@@ -1,7 +1,7 @@
 <div id="unified-scheduled-message-modal">
     <form class="modal-form" id="unified-scheduled-message-form">
 
-        {{! ── Section 1: Template selector + message content ─────────────── }}
+        {{! ── Message content ─────────────────────────────────────────────── }}
         <div class="modal-field-label">{{t "Message" }}</div>
         <div class="unified-modal-snippet-row">
             <a role="button"
@@ -18,22 +18,30 @@
             placeholder="{{t 'Write your message here…' }}"
         ></textarea>
 
-        {{! ── Section 2: Datetime picker ─────────────────────────────────── }}
-        <div class="modal-field-label">{{t "Send at (one-time)" }}</div>
-        <input
-            id="unified-scheduled-message-datetime"
-            type="datetime-local"
-            class="modal_text_input"
-        />
-        <p class="modal-field-hint">{{t "Required for one-time delivery. Leave blank when using recurrence." }}</p>
+        {{! ── Scheduling row: datetime picker + Repeat toggle ─────────────── }}
+        <div class="unified-schedule-row">
+            <div id="unified-datetime-section">
+                <label class="modal-field-label" for="unified-scheduled-message-datetime">
+                    {{t "Send at" }}
+                </label>
+                <input
+                    id="unified-scheduled-message-datetime"
+                    type="datetime-local"
+                    class="modal_text_input"
+                />
+            </div>
+            <label class="unified-repeat-toggle" for="unified-repeat-checkbox">
+                <input type="checkbox" id="unified-repeat-checkbox" />
+                {{t "Repeat" }}
+            </label>
+        </div>
 
-        {{! ── Section 3: Recurrence fields (partial) ─────────────────────── }}
-        <div class="modal-field-label">{{t "Recurrence (optional)" }}</div>
-        <div id="unified-recurrence-section" class="unified-recurrence-section">
+        {{! Recurrence form — hidden until Repeat is checked ─────────────── }}
+        <div id="unified-recurrence-section" class="unified-recurrence-section" style="display: none;">
             {{> popovers/recurring_fields}}
         </div>
 
-        {{! ── Section 4: Batch destinations ──────────────────────────────── }}
+        {{! ── Destinations ────────────────────────────────────────────────── }}
         <div class="modal-field-label">{{t "Destinations" }}</div>
         <div id="unified-destinations-list"></div>
 
@@ -56,24 +64,16 @@
             </div>
 
             <div class="unified-add-direct-form rsm-add-dest-form">
-                <div id="unified-dm-pill-container" class="pill-container">
-                    <div class="input" contenteditable="true" tabindex="0"></div>
+                <div class="unified-dest-row">
+                    <div id="unified-dm-pill-container" class="pill-container">
+                        <div class="input" contenteditable="true" tabindex="0"></div>
+                    </div>
                 </div>
                 <button type="button" id="unified-add-direct-btn" class="button small rounded">
                     {{t "+ Add direct message" }}
                 </button>
             </div>
         </div>
-
-        {{! ── Optional label ─────────────────────────────────────────────── }}
-        <div class="modal-field-label">{{t "Label (optional)" }}</div>
-        <input
-            id="unified-scheduled-message-label"
-            type="text"
-            class="modal_text_input"
-            placeholder="{{t 'e.g. Weekly standup' }}"
-            maxlength="200"
-        />
 
     </form>
 </div>
