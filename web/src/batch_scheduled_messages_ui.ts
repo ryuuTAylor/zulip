@@ -1,3 +1,6 @@
+// DEPRECATED: Use unified_scheduled_message_ui.ts instead.
+// This module implements the old batch-only scheduling modal.  It is kept so
+// the feature can be restored easily if the unified modal is reverted.
 import $ from "jquery";
 import _ from "lodash";
 

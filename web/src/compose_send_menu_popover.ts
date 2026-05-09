@@ -53,10 +53,12 @@ export function get_compose_recurring_destination_summary(): string {
     return $t({defaultMessage: "Will send to {recipients}"}, {recipients});
 }
 
-// Initializes the recurring builder inside the send-later popover and wires up
-// the popover-specific submit handler (which reads from the compose box and
-// posts to /json/scheduled_messages). External callers that want only the field
-// wiring should use initialize_recurring_fields instead.
+// DEPRECATED: initialize_recurring_builder is no longer wired to the popover
+// since the unified scheduled-message modal replaced the old send-later
+// recurrence UI.  Kept here so it can be restored easily if needed.
+// To restore: un-comment this function and its two call sites below
+// (in onMount and update_send_later_options).
+/*
 function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
     initialize_recurring_fields($popper, get_compose_recurring_destination_summary());
 
@@ -145,6 +147,7 @@ function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance)
         e.stopPropagation();
     });
 }
+*/
 
 function set_compose_box_schedule(element: HTMLElement): number {
     const send_stamp = element.getAttribute("data-send-stamp");
@@ -218,9 +221,10 @@ export function open_schedule_message_menu(
                 );
             }
             const $popper = $(instance.popper);
-            if (remind_message_id === undefined) {
-                initialize_recurring_builder($popper, instance);
-            }
+            // DEPRECATED: recurring builder wired here by the old popover UI.
+            // if (remind_message_id === undefined) {
+            //     initialize_recurring_builder($popper, instance);
+            // }
             const message_schedule_callback = (time: string | number): void => {
                 if (remind_message_id !== undefined) {
                     do_schedule_reminder(
@@ -398,15 +402,16 @@ export function initialize(): void {
                     $("textarea#compose-textarea").trigger("focus");
                 }, ENTER_SENDS_SELECTION_DELAY);
             });
-            // Handle Send later clicks
-            $popper.one("click", ".open_send_later_modal", () => {
-                popover_menus.hide_current_popover_if_visible(instance);
-                open_schedule_message_menu(undefined, util.the($("#send_later i")));
-            });
-            $popper.one("click", ".open_batch_schedule_modal", () => {
-                popover_menus.hide_current_popover_if_visible(instance);
-                batch_scheduled_messages_ui.open_batch_modal();
-            });
+            // DEPRECATED: old single-message scheduler click handler.
+            // $popper.one("click", ".open_send_later_modal", () => {
+            //     popover_menus.hide_current_popover_if_visible(instance);
+            //     open_schedule_message_menu(undefined, util.the($("#send_later i")));
+            // });
+            // DEPRECATED: old batch-only scheduler click handler.
+            // $popper.one("click", ".open_batch_schedule_modal", () => {
+            //     popover_menus.hide_current_popover_if_visible(instance);
+            //     batch_scheduled_messages_ui.open_batch_modal();
+            // });
             $popper.one("click", ".open_unified_schedule_modal", () => {
                 popover_menus.hide_current_popover_if_visible(instance);
                 unified_scheduled_message_ui.open_unified_scheduled_modal();
@@ -456,9 +461,10 @@ export function update_send_later_options(): void {
         const filtered_send_opts = scheduled_messages.get_filtered_send_opts(now);
         const $new_send_later_options = $(render_schedule_message_popover(filtered_send_opts));
         $("#send-later-options").replaceWith($new_send_later_options);
-        const instance = popover_menus.popover_instances.send_later_options;
-        if (instance !== null) {
-            initialize_recurring_builder($new_send_later_options, instance);
-        }
+        // DEPRECATED: recurring builder no longer needed in the refreshed popover.
+        // const instance = popover_menus.popover_instances.send_later_options;
+        // if (instance !== null) {
+        //     initialize_recurring_builder($new_send_later_options, instance);
+        // }
     }
 }
