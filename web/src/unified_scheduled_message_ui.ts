@@ -300,7 +300,12 @@ function submit_unified_form(): void {
         }
         data["recurrence_type"] = recurring_result.recurrence_type;
         data["recurrence_days"] = recurring_result.recurrence_days;
+        // scheduled_time is HH:MM as entered by the user in their local timezone.
+        // Send the browser's IANA timezone so the backend stores and displays
+        // the time in the user's local zone (e.g. "Daily at 8:06 PM") rather
+        // than interpreting it as UTC.
         data["scheduled_time"] = recurring_result.scheduled_time;
+        data["timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone;
     } else {
         // One-time batch: require a datetime-local value.
         const datetime_val = (
@@ -323,7 +328,18 @@ function submit_unified_form(): void {
     }
 
     clear_modal_error();
-    dialog_widget.submit_api_request(channel.post, "/json/batch_scheduled_messages", data);
+    dialog_widget.submit_api_request(channel.post, "/json/batch_scheduled_messages", data, {
+        success_continuation() {
+            // Reset module-level state immediately after a successful submit so
+            // the next open() call starts completely clean regardless of whether
+            // the dialog framework reuses the DOM element.
+            pending_destinations = [];
+            dm_pill_widget = null;
+            current_topic_typeahead = null;
+            // Also clear the chip list DOM while the modal is still in the tree.
+            $("#unified-destinations-list").empty();
+        },
+    });
 }
 
 // ---------------------------------------------------------------------------
