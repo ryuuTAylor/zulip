@@ -1,26 +1,39 @@
-// DEPRECATED: Use unified_scheduled_message_ui.ts instead.
-// This module implements the old batch-only scheduling modal.  It is kept so
-// the feature can be restored easily if the unified modal is reverted.
+/**
+ * Unified scheduled-message modal.
+ *
+ * Combines template (saved snippet) selection, a datetime picker for one-time
+ * delivery, recurrence controls (daily / weekly / monthly), and a
+ * multi-destination manager (channels + DMs) into a single modal dialog.
+ *
+ * Submit routing:
+ *  - recurrence selected  → POST /json/batch_scheduled_messages with recurrence fields
+ *  - one-time delivery    → POST /json/batch_scheduled_messages without recurrence fields
+ *
+ * One destination is valid in both cases; users are not forced to add more than one.
+ */
+
 import $ from "jquery";
 import _ from "lodash";
 
-import render_batch_scheduled_message_modal from "../templates/batch_scheduled_message_modal.hbs";
+import render_unified_scheduled_message_modal from "../templates/unified_scheduled_message_modal.hbs";
 
 import * as channel from "./channel.ts";
 import * as compose_state from "./compose_state.ts";
 import * as composebox_typeahead from "./composebox_typeahead.ts";
+import {initialize_recurring_fields, get_recurring_schedule_request_data} from "./recurring_fields_ui.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
 import * as input_pill from "./input_pill.ts";
 import * as people from "./people.ts";
 import * as pill_typeahead from "./pill_typeahead.ts";
+import * as saved_snippets_ui from "./saved_snippets_ui.ts";
 import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
 import * as ui_report from "./ui_report.ts";
 import * as user_pill from "./user_pill.ts";
 
 // ---------------------------------------------------------------------------
-// Destination list
+// Destination state (mirrors batch_scheduled_messages_ui.ts)
 // ---------------------------------------------------------------------------
 
 type StreamDestination = {type: "stream"; stream_id: number; topic: string};
@@ -28,14 +41,7 @@ type DirectDestination = {type: "direct"; user_ids: number[]};
 type Destination = StreamDestination | DirectDestination;
 
 let pending_destinations: Destination[] = [];
-
-// Holds the active pill widget for the DM recipient picker. Reset each time
-// the modal opens (via open_batch_modal) and re-created after each "Add DM"
-// to clear out the selected pills.
 let dm_pill_widget: input_pill.InputPillContainer<user_pill.UserPill> | null = null;
-
-// Topic typeahead instance for #batch-topic-input. Replaced whenever the
-// stream selection changes; null when no stream is selected.
 let current_topic_typeahead: ReturnType<
     typeof composebox_typeahead.initialize_topic_edit_typeahead
 > | null = null;
@@ -61,7 +67,7 @@ function clear_modal_error(): void {
 // ---------------------------------------------------------------------------
 
 function render_pending_destinations(): void {
-    const $list = $("#batch-destinations-list");
+    const $list = $("#unified-destinations-list");
     $list.empty();
 
     for (const [idx, dest] of pending_destinations.entries()) {
@@ -80,7 +86,7 @@ function render_pending_destinations(): void {
         const $chip = $(`
             <div class="rsm-destination-chip">
                 <span>${label}</span>
-                <button type="button" class="batch-remove-dest-btn" data-idx="${idx}">&times;</button>
+                <button type="button" class="unified-remove-dest-btn" data-idx="${idx}">&times;</button>
             </div>
         `.trim());
         $list.append($chip);
@@ -97,8 +103,6 @@ function remove_destination(idx: number): void {
 // ---------------------------------------------------------------------------
 
 function is_duplicate_stream_destination(stream_id: number, topic: string): boolean {
-    // Topic comparison is case-insensitive — "General" and "general" refer to
-    // the same topic in Zulip.
     const topic_lower = topic.toLowerCase();
     return pending_destinations.some(
         (dest) =>
@@ -109,7 +113,6 @@ function is_duplicate_stream_destination(stream_id: number, topic: string): bool
 }
 
 function is_duplicate_direct_destination(user_ids: number[]): boolean {
-    // Order-independent comparison: [101, 202] equals [202, 101].
     const sorted_new = [...user_ids].sort((a, b) => a - b);
     return pending_destinations.some((dest) => {
         if (dest.type !== "direct" || dest.user_ids.length !== user_ids.length) {
@@ -121,12 +124,11 @@ function is_duplicate_direct_destination(user_ids: number[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Channel (stream) destination — dropdown + topic text input
+// Channel destination — dropdown + topic input
 // ---------------------------------------------------------------------------
 
 function populate_stream_select(): void {
-    const $select = $<HTMLSelectElement>("#batch-stream-select");
-    // Keep the placeholder option, remove any previously populated options.
+    const $select = $<HTMLSelectElement>("#unified-stream-select");
     $select.find("option:not(:first-child)").remove();
 
     const subs = [...stream_data.subscribed_subs()].sort((a, b) =>
@@ -138,7 +140,7 @@ function populate_stream_select(): void {
 }
 
 function update_topic_typeahead(): void {
-    const stream_id_str = ($<HTMLSelectElement>("#batch-stream-select").val() ?? "").toString();
+    const stream_id_str = ($<HTMLSelectElement>("#unified-stream-select").val() ?? "").toString();
     if (!stream_id_str) {
         current_topic_typeahead = null;
         return;
@@ -149,19 +151,16 @@ function update_topic_typeahead(): void {
         current_topic_typeahead = null;
         return;
     }
-    // Initialise (or replace) the typeahead bound to the topic text input.
-    // initialize_topic_edit_typeahead internally calls topics_seen_for(stream_id)
-    // to build the suggestion list, so it always reflects the selected stream.
     current_topic_typeahead = composebox_typeahead.initialize_topic_edit_typeahead(
-        $<HTMLInputElement>("#batch-topic-input"),
+        $<HTMLInputElement>("#unified-topic-input"),
         sub.name,
         false,
     );
 }
 
 function add_stream_destination(): void {
-    const stream_id_str = ($<HTMLSelectElement>("#batch-stream-select").val() ?? "").toString();
-    const topic = ($<HTMLInputElement>("#batch-topic-input").val() ?? "").trim();
+    const stream_id_str = ($<HTMLSelectElement>("#unified-stream-select").val() ?? "").toString();
+    const topic = ($<HTMLInputElement>("#unified-topic-input").val() ?? "").trim();
 
     if (!stream_id_str || !topic) {
         show_modal_error($t({defaultMessage: "Please select a channel and enter a topic."}));
@@ -181,19 +180,17 @@ function add_stream_destination(): void {
     clear_modal_error();
     render_pending_destinations();
 
-    $<HTMLSelectElement>("#batch-stream-select").val("");
-    $<HTMLInputElement>("#batch-topic-input").val("");
+    $<HTMLSelectElement>("#unified-stream-select").val("");
+    $<HTMLInputElement>("#unified-topic-input").val("");
     current_topic_typeahead = null;
 }
 
 // ---------------------------------------------------------------------------
-// Direct message destination — pill-based user picker
+// DM destination — pill widget
 // ---------------------------------------------------------------------------
 
 function init_dm_pill_widget(): void {
-    const $container = $("#batch-dm-pill-container");
-    // Re-seed the container with a fresh contenteditable input so the pill
-    // widget has a clean slate the first time the modal opens.
+    const $container = $("#unified-dm-pill-container");
     $container.empty();
     $container.append(
         $('<div class="input" contenteditable="true" tabindex="0"></div>'),
@@ -207,10 +204,7 @@ function clear_dm_pills(): void {
     if (dm_pill_widget === null) {
         return;
     }
-    // Remove every pill through the widget API (keeps the DOM skeleton and
-    // focus intact — avoids the browser moving focus to the next focusable
-    // element, which would open the channel <select> dropdown).
-    const pill_elements = $("#batch-dm-pill-container").find(".pill").toArray();
+    const pill_elements = $("#unified-dm-pill-container").find(".pill").toArray();
     for (const el of pill_elements) {
         dm_pill_widget.removePill(el);
     }
@@ -230,7 +224,10 @@ function add_direct_destination(): void {
 
     if (is_duplicate_direct_destination(user_ids)) {
         show_modal_error(
-            $t({defaultMessage: "This direct message recipient set is already in the destination list."}),
+            $t({
+                defaultMessage:
+                    "This direct message recipient set is already in the destination list.",
+            }),
         );
         return;
     }
@@ -238,28 +235,45 @@ function add_direct_destination(): void {
     pending_destinations.push({type: "direct", user_ids});
     clear_modal_error();
     render_pending_destinations();
-
-    // Clear pills via the widget API, not by re-initialising the DOM, so
-    // focus stays inside the pill container rather than jumping to the select.
     clear_dm_pills();
+}
+
+// ---------------------------------------------------------------------------
+// Datetime min helper (local-time-aware, no UTC offset bug)
+// ---------------------------------------------------------------------------
+
+function set_datetime_min(): void {
+    const now = new Date();
+    now.setSeconds(0, 0);
+    now.setMinutes(now.getMinutes() + 1);
+    const pad = (n: number): string => String(n).padStart(2, "0");
+    const local_min = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    $<HTMLInputElement>("#unified-scheduled-message-datetime").attr("min", local_min);
+}
+
+// ---------------------------------------------------------------------------
+// Repeat-checkbox toggle (shows recurrence form, hides datetime picker)
+// ---------------------------------------------------------------------------
+
+function wire_repeat_toggle(): void {
+    $("#unified-repeat-checkbox").on("change", function () {
+        const is_recurring = $(this).prop("checked") as boolean;
+        $("#unified-datetime-section").toggle(!is_recurring);
+        $("#unified-recurrence-section").toggle(is_recurring);
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Form submission
 // ---------------------------------------------------------------------------
 
-function submit_batch_form(): void {
-    const content = ($<HTMLTextAreaElement>("#batch-scheduled-message-content").val() ?? "").trim();
-    const datetime_val = ($<HTMLInputElement>("#batch-scheduled-message-datetime").val() ?? "");
-    const batch_label = ($<HTMLInputElement>("#batch-scheduled-message-label").val() ?? "").trim();
+function submit_unified_form(): void {
+    const content = (
+        $<HTMLTextAreaElement>("#unified-scheduled-message-content").val() ?? ""
+    ).trim();
 
     if (!content) {
         show_modal_error($t({defaultMessage: "Please enter a message."}));
-        return;
-    }
-
-    if (!datetime_val) {
-        show_modal_error($t({defaultMessage: "Please choose a send time."}));
         return;
     }
 
@@ -268,41 +282,93 @@ function submit_batch_form(): void {
         return;
     }
 
-    const scheduled_delivery_timestamp = Math.floor(new Date(datetime_val).getTime() / 1000);
-    if (scheduled_delivery_timestamp <= Math.floor(Date.now() / 1000)) {
-        show_modal_error($t({defaultMessage: "Send time must be in the future."}));
-        return;
-    }
+    const is_recurring = $<HTMLInputElement>("#unified-repeat-checkbox").prop("checked") as boolean;
 
     const data: Record<string, unknown> = {
         content,
         destinations: JSON.stringify(pending_destinations),
-        scheduled_delivery_timestamp: JSON.stringify(scheduled_delivery_timestamp),
     };
 
-    if (batch_label) {
-        data["batch_label"] = batch_label;
+    if (is_recurring) {
+        // Recurring batch: validate and forward recurrence fields.
+        const recurring_result = get_recurring_schedule_request_data(
+            $("#unified-scheduled-message-modal"),
+        );
+        if ("error_message" in recurring_result) {
+            show_modal_error(recurring_result.error_message);
+            return;
+        }
+        data["recurrence_type"] = recurring_result.recurrence_type;
+        data["recurrence_days"] = recurring_result.recurrence_days;
+        // scheduled_time is HH:MM as entered by the user in their local timezone.
+        // Send the browser's IANA timezone so the backend stores and displays
+        // the time in the user's local zone (e.g. "Daily at 8:06 PM") rather
+        // than interpreting it as UTC.
+        data["scheduled_time"] = recurring_result.scheduled_time;
+        data["timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } else {
+        // One-time batch: require a datetime-local value.
+        const datetime_val = (
+            $<HTMLInputElement>("#unified-scheduled-message-datetime").val() ?? ""
+        );
+        if (!datetime_val) {
+            show_modal_error(
+                $t({defaultMessage: "Please choose a send time."}),
+            );
+            return;
+        }
+        const scheduled_delivery_timestamp = Math.floor(
+            new Date(datetime_val).getTime() / 1000,
+        );
+        if (scheduled_delivery_timestamp <= Math.floor(Date.now() / 1000)) {
+            show_modal_error($t({defaultMessage: "Send time must be in the future."}));
+            return;
+        }
+        data["scheduled_delivery_timestamp"] = JSON.stringify(scheduled_delivery_timestamp);
     }
 
     clear_modal_error();
-    dialog_widget.submit_api_request(channel.post, "/json/batch_scheduled_messages", data);
+    dialog_widget.submit_api_request(channel.post, "/json/batch_scheduled_messages", data, {
+        success_continuation() {
+            // Reset module-level state immediately after a successful submit so
+            // the next open() call starts completely clean regardless of whether
+            // the dialog framework reuses the DOM element.
+            pending_destinations = [];
+            dm_pill_widget = null;
+            current_topic_typeahead = null;
+            // Also clear the chip list DOM while the modal is still in the tree.
+            $("#unified-destinations-list").empty();
+        },
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Modal lifecycle
 // ---------------------------------------------------------------------------
 
-function post_render_batch_modal(): void {
-    // Populate channel dropdown with subscribed streams.
+function post_render_unified_modal(): void {
+    // Wire recurrence fields (dropdowns, checkboxes, summary text).
+    initialize_recurring_fields($("#unified-scheduled-message-modal"));
+
+    // Wire the Repeat checkbox — hidden until user opts in.
+    wire_repeat_toggle();
+
+    // Set up saved-snippets dropdown to insert into the modal textarea.
+    saved_snippets_ui.setup_saved_snippets_dropdown_widget(
+        ".unified-snippet-widget",
+        () => $<HTMLTextAreaElement>("#unified-scheduled-message-content"),
+    );
+
+    // Populate channel dropdown.
     populate_stream_select();
 
-    // Initialize the DM user-pill widget.
+    // Initialize DM pill widget.
     init_dm_pill_widget();
 
-    // Pre-populate content and first destination from compose box.
+    // Pre-populate content and one destination from the compose box.
     const compose_content = compose_state.message_content();
     if (compose_content) {
-        $<HTMLTextAreaElement>("#batch-scheduled-message-content").val(compose_content);
+        $<HTMLTextAreaElement>("#unified-scheduled-message-content").val(compose_content);
     }
 
     const msg_type = compose_state.get_message_type();
@@ -320,41 +386,32 @@ function post_render_batch_modal(): void {
     }
     render_pending_destinations();
 
-    // Update the topic typeahead whenever the selected channel changes.
-    $("#batch-stream-select").on("change", update_topic_typeahead);
+    // Wire destination buttons.
+    $("#unified-stream-select").on("change", update_topic_typeahead);
+    $("#unified-add-stream-btn").on("click", add_stream_destination);
+    $("#unified-add-direct-btn").on("click", add_direct_destination);
 
-    // Wire up add-destination buttons.
-    $("#batch-add-stream-btn").on("click", add_stream_destination);
-    $("#batch-add-direct-btn").on("click", add_direct_destination);
-
-    // Wire up remove chips via event delegation.
-    $("#batch-destinations-list").on("click", ".batch-remove-dest-btn", (e) => {
+    // Wire remove chips via event delegation.
+    $("#unified-destinations-list").on("click", ".unified-remove-dest-btn", (e) => {
         const idx = Number.parseInt($(e.currentTarget).attr("data-idx") ?? "0", 10);
         remove_destination(idx);
     });
 
-    // Set the datetime minimum to now + 1 minute, formatted in local time.
-    // toISOString() returns UTC, but datetime-local inputs interpret the
-    // min attribute as local time, so we must format using local components.
-    const now = new Date();
-    now.setSeconds(0, 0);
-    now.setMinutes(now.getMinutes() + 1);
-    const pad = (n: number): string => String(n).padStart(2, "0");
-    const local_min = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-    $<HTMLInputElement>("#batch-scheduled-message-datetime").attr("min", local_min);
+    // Set datetime minimum in local time (avoids UTC offset bug).
+    set_datetime_min();
 }
 
-export function open_batch_modal(): void {
+export function open_unified_scheduled_modal(): void {
     pending_destinations = [];
     dm_pill_widget = null;
     current_topic_typeahead = null;
     dialog_widget.launch({
-        modal_title_html: $t_html({defaultMessage: "Batch schedule message"}),
-        modal_content_html: render_batch_scheduled_message_modal(),
+        modal_title_html: $t_html({defaultMessage: "Schedule message"}),
+        modal_content_html: render_unified_scheduled_message_modal(),
         modal_submit_button_text: $t({defaultMessage: "Schedule"}),
-        id: "batch-scheduled-message-modal",
-        form_id: "batch-scheduled-message-form",
-        on_click: submit_batch_form,
-        post_render: post_render_batch_modal,
+        id: "unified-scheduled-message-modal",
+        form_id: "unified-scheduled-message-form",
+        on_click: submit_unified_form,
+        post_render: post_render_unified_modal,
     });
 }

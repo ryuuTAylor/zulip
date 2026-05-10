@@ -1,0 +1,79 @@
+<div id="unified-scheduled-message-modal">
+    <form class="modal-form" id="unified-scheduled-message-form">
+
+        {{! ── Message content ─────────────────────────────────────────────── }}
+        <div class="modal-field-label">{{t "Message" }}</div>
+        <div class="unified-modal-snippet-row">
+            <a role="button"
+               class="unified-snippet-widget saved-snippets-unified-widget compose_control_button zulip-icon zulip-icon-message-square-text"
+               aria-label="{{t 'Load a saved snippet' }}"
+               tabindex="0"
+               title="{{t 'Load a saved snippet' }}"
+            ></a>
+        </div>
+        <textarea
+            id="unified-scheduled-message-content"
+            class="modal-textarea"
+            rows="4"
+            placeholder="{{t 'Write your message here…' }}"
+        ></textarea>
+
+        {{! ── Scheduling row: datetime picker + Repeat toggle ─────────────── }}
+        <div class="unified-schedule-row">
+            <div id="unified-datetime-section">
+                <label class="modal-field-label" for="unified-scheduled-message-datetime">
+                    {{t "Send at" }}
+                </label>
+                <input
+                    id="unified-scheduled-message-datetime"
+                    type="datetime-local"
+                    class="modal_text_input"
+                />
+            </div>
+            <label class="unified-repeat-toggle" for="unified-repeat-checkbox">
+                <input type="checkbox" id="unified-repeat-checkbox" />
+                {{t "Repeat" }}
+            </label>
+        </div>
+
+        {{! Recurrence form — hidden until Repeat is checked ─────────────── }}
+        <div id="unified-recurrence-section" class="unified-recurrence-section" style="display: none;">
+            {{> popovers/recurring_fields}}
+        </div>
+
+        {{! ── Destinations ────────────────────────────────────────────────── }}
+        <div class="modal-field-label">{{t "Destinations" }}</div>
+        <div id="unified-destinations-list"></div>
+
+        <div class="unified-add-dest-forms">
+            <div class="unified-add-stream-form rsm-add-dest-form">
+                <div class="unified-dest-row">
+                    <select id="unified-stream-select" class="modal-select unified-dest-select">
+                        <option value="">{{t "— Select a channel —" }}</option>
+                    </select>
+                    <input
+                        id="unified-topic-input"
+                        type="text"
+                        class="modal_text_input unified-topic-input"
+                        placeholder="{{t 'Topic' }}"
+                    />
+                </div>
+                <button type="button" id="unified-add-stream-btn" class="button small rounded">
+                    {{t "+ Add channel" }}
+                </button>
+            </div>
+
+            <div class="unified-add-direct-form rsm-add-dest-form">
+                <div class="unified-dest-row">
+                    <div id="unified-dm-pill-container" class="pill-container">
+                        <div class="input" contenteditable="true" tabindex="0"></div>
+                    </div>
+                </div>
+                <button type="button" id="unified-add-direct-btn" class="button small rounded">
+                    {{t "+ Add direct message" }}
+                </button>
+            </div>
+        </div>
+
+    </form>
+</div>

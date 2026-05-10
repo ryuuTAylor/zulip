@@ -58,8 +58,16 @@ function format_ordinal_day(day: number): string {
     }
 }
 
-function get_timezone_label(scheduled_message: ScheduledMessage): string {
-    return scheduled_message.timezone ?? "UTC";
+// Converts a stored "HH:MM" string (in the user's intended local timezone) to
+// a human-readable 12-hour format, e.g. "20:22" → "8:22 PM".
+// No timezone conversion is performed — the HH:MM is already in local time.
+function format_time_hhmm(hhmm: string): string {
+    const [hours_str, minutes_str] = hhmm.split(":");
+    const hours = Number.parseInt(hours_str ?? "0", 10);
+    const minutes = Number.parseInt(minutes_str ?? "0", 10);
+    const period = hours >= 12 ? "PM" : "AM";
+    const hours12 = hours % 12 === 0 ? 12 : hours % 12;
+    return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`;
 }
 
 export function format_scheduled_delivery_label(scheduled_message: ScheduledMessage): string {
@@ -70,47 +78,38 @@ export function format_scheduled_delivery_label(scheduled_message: ScheduledMess
         );
     }
 
-    const timezone_label = get_timezone_label(scheduled_message);
-    const scheduled_time = scheduled_message.scheduled_time ?? "00:00";
+    const tz = scheduled_message.timezone ?? "UTC";
+    const time = format_time_hhmm(scheduled_message.scheduled_time ?? "00:00");
 
     if (scheduled_message.recurrence_type === "daily") {
         return $t(
-            {defaultMessage: "Daily at {time} {timezone}"},
-            {
-                time: scheduled_time,
-                timezone: timezone_label,
-            },
+            {defaultMessage: "Daily at {time} ({timezone})"},
+            {time, timezone: tz},
         );
     }
 
     if (scheduled_message.recurrence_type === "monthly" && scheduled_message.recurrence_days) {
         if (Array.isArray(scheduled_message.recurrence_days)) {
             return $t(
-                {defaultMessage: "Monthly at {time} {timezone}"},
-                {
-                    time: scheduled_time,
-                    timezone: timezone_label,
-                },
+                {defaultMessage: "Monthly at {time} ({timezone})"},
+                {time, timezone: tz},
             );
         }
 
         if (scheduled_message.recurrence_days.type === "calendar_day") {
             if (scheduled_message.recurrence_days.day === -1) {
                 return $t(
-                    {defaultMessage: "Monthly on the last day at {time} {timezone}"},
-                    {
-                        time: scheduled_time,
-                        timezone: timezone_label,
-                    },
+                    {defaultMessage: "Monthly on the last day at {time} ({timezone})"},
+                    {time, timezone: tz},
                 );
             }
 
             return $t(
-                {defaultMessage: "Monthly on the {day} at {time} {timezone}"},
+                {defaultMessage: "Monthly on the {day} at {time} ({timezone})"},
                 {
                     day: format_ordinal_day(scheduled_message.recurrence_days.day ?? 1),
-                    time: scheduled_time,
-                    timezone: timezone_label,
+                    time,
+                    timezone: tz,
                 },
             );
         }
@@ -125,13 +124,8 @@ export function format_scheduled_delivery_label(scheduled_message: ScheduledMess
         const ordinal = ordinal_labels.get(scheduled_message.recurrence_days.ordinal ?? 1) ?? "";
         const weekday = DAY_NAMES[scheduled_message.recurrence_days.weekday ?? 0] ?? "Mon";
         return $t(
-            {defaultMessage: "Monthly on the {ordinal} {weekday} at {time} {timezone}"},
-            {
-                ordinal,
-                weekday,
-                time: scheduled_time,
-                timezone: timezone_label,
-            },
+            {defaultMessage: "Monthly on the {ordinal} {weekday} at {time} ({timezone})"},
+            {ordinal, weekday, time, timezone: tz},
         );
     }
 
@@ -147,23 +141,14 @@ export function format_scheduled_delivery_label(scheduled_message: ScheduledMess
 
     if (day_labels !== "") {
         return $t(
-            {defaultMessage: "{recurrence} on {days} at {time} {timezone}"},
-            {
-                recurrence: recurrence_label,
-                days: day_labels,
-                time: scheduled_time,
-                timezone: timezone_label,
-            },
+            {defaultMessage: "{recurrence} on {days} at {time} ({timezone})"},
+            {recurrence: recurrence_label, days: day_labels, time, timezone: tz},
         );
     }
 
     return $t(
-        {defaultMessage: "{recurrence} at {time} {timezone}"},
-        {
-            recurrence: recurrence_label,
-            time: scheduled_time,
-            timezone: timezone_label,
-        },
+        {defaultMessage: "{recurrence} at {time} ({timezone})"},
+        {recurrence: recurrence_label, time, timezone: tz},
     );
 }
 

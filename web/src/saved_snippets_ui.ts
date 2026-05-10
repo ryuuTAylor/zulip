@@ -153,56 +153,92 @@ function item_button_click_callback(event: JQuery.ClickEvent): void {
     }
 }
 
-function item_click_callback(
+function make_item_click_callback(
+    get_target_textarea?: () => JQuery<HTMLTextAreaElement>,
+): (
     event: JQuery.ClickEvent,
     dropdown: tippy.Instance,
     widget: dropdown_widget.DropdownWidget,
     is_sticky_bottom_option_clicked: boolean,
-): void {
-    event.preventDefault();
-    event.stopPropagation();
+) => void {
+    return function item_click_callback(
+        event: JQuery.ClickEvent,
+        dropdown: tippy.Instance,
+        widget: dropdown_widget.DropdownWidget,
+        is_sticky_bottom_option_clicked: boolean,
+    ): void {
+        event.preventDefault();
+        event.stopPropagation();
 
-    dropdown.hide();
-    // Get target textarea where the "Add saved snippet" button is clicked.
-    const $target_element = $(dropdown.reference);
-    let $target_textarea: JQuery<HTMLTextAreaElement>;
-    let edit_message_id: string | undefined;
-    if ($target_element.parents(".message_edit_form").length === 1) {
-        edit_message_id = rows.id($target_element.parents(".message_row")).toString();
-        $target_textarea = $(`#edit_form_${CSS.escape(edit_message_id)} .message_edit_content`);
-    } else {
-        $target_textarea = $<HTMLTextAreaElement>("textarea#compose-textarea");
-    }
-    if (is_sticky_bottom_option_clicked) {
-        dialog_widget.launch({
-            modal_title_html: $t_html({defaultMessage: "Create a new saved snippet"}),
-            modal_content_html: render_add_saved_snippet_modal({
-                prepopulated_content: $target_textarea.val(),
-            }),
-            modal_submit_button_text: $t({defaultMessage: "Save"}),
-            id: "add-new-saved-snippet-modal",
-            form_id: "add-new-saved-snippet-form",
-            update_submit_disabled_state_on_change: true,
-            on_click: submit_create_saved_snippet_form,
-            on_shown: () => $("#new-saved-snippet-title").trigger("focus"),
-            post_render: saved_snippet_modal_post_render,
-        });
-    } else {
-        const current_value = widget.current_value;
-        assert(typeof current_value === "number");
-        const saved_snippet = saved_snippets.get_saved_snippet_by_id(current_value);
-        assert(saved_snippet !== undefined);
-        const content = saved_snippet.content;
-        compose_ui.insert_syntax_and_focus(content, $target_textarea);
-    }
+        dropdown.hide();
+
+        let $target_textarea: JQuery<HTMLTextAreaElement>;
+        if (get_target_textarea !== undefined) {
+            // Caller supplied a custom target (e.g. a modal textarea).
+            $target_textarea = get_target_textarea();
+        } else {
+            // Default: compose box or message-edit form.
+            const $target_element = $(dropdown.reference);
+            let edit_message_id: string | undefined;
+            if ($target_element.parents(".message_edit_form").length === 1) {
+                edit_message_id = rows.id($target_element.parents(".message_row")).toString();
+                $target_textarea = $(
+                    `#edit_form_${CSS.escape(edit_message_id)} .message_edit_content`,
+                );
+            } else {
+                $target_textarea = $<HTMLTextAreaElement>("textarea#compose-textarea");
+            }
+        }
+
+        if (is_sticky_bottom_option_clicked) {
+            dialog_widget.launch({
+                modal_title_html: $t_html({defaultMessage: "Create a new saved snippet"}),
+                modal_content_html: render_add_saved_snippet_modal({
+                    prepopulated_content: $target_textarea.val(),
+                }),
+                modal_submit_button_text: $t({defaultMessage: "Save"}),
+                id: "add-new-saved-snippet-modal",
+                form_id: "add-new-saved-snippet-form",
+                update_submit_disabled_state_on_change: true,
+                on_click: submit_create_saved_snippet_form,
+                on_shown: () => $("#new-saved-snippet-title").trigger("focus"),
+                post_render: saved_snippet_modal_post_render,
+            });
+        } else {
+            const current_value = widget.current_value;
+            assert(typeof current_value === "number");
+            const saved_snippet = saved_snippets.get_saved_snippet_by_id(current_value);
+            assert(saved_snippet !== undefined);
+            const content = saved_snippet.content;
+            compose_ui.insert_syntax_and_focus(content, $target_textarea);
+        }
+    };
 }
 
-export function setup_saved_snippets_dropdown_widget(widget_selector: string): void {
+// Default callback used by the compose-box and message-edit snippets widget.
+const item_click_callback = make_item_click_callback();
+
+/**
+ * Set up a saved-snippets dropdown widget bound to `widget_selector`.
+ *
+ * Pass `get_target_textarea` to redirect snippet insertion to a custom
+ * textarea (e.g. a modal's content field). When omitted the widget uses the
+ * default compose-box / message-edit-form target.
+ */
+export function setup_saved_snippets_dropdown_widget(
+    widget_selector: string,
+    get_target_textarea?: () => JQuery<HTMLTextAreaElement>,
+): void {
+    const callback =
+        get_target_textarea !== undefined
+            ? make_item_click_callback(get_target_textarea)
+            : item_click_callback;
+
     new dropdown_widget.DropdownWidget({
         widget_name: "saved_snippets",
         widget_selector,
         get_options: saved_snippets.get_options_for_dropdown_widget,
-        item_click_callback,
+        item_click_callback: callback,
         item_button_click_callback,
         $events_container: $("body"),
         unique_id_type: "number",
