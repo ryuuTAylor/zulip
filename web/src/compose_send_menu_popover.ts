@@ -7,7 +7,6 @@ import render_schedule_message_popover from "../templates/popovers/schedule_mess
 import render_send_later_popover from "../templates/popovers/send_later_popover.hbs";
 
 import * as batch_scheduled_messages_ui from "./batch_scheduled_messages_ui.ts";
-import * as unified_scheduled_message_ui from "./unified_scheduled_message_ui.ts";
 import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 import * as compose from "./compose.ts";
@@ -20,14 +19,6 @@ import {$t} from "./i18n.ts";
 import * as message_reminder from "./message_reminder.ts";
 import * as people from "./people.ts";
 import * as popover_menus from "./popover_menus.ts";
-import {
-    get_recurring_schedule_request_data,
-    initialize_recurring_fields,
-    set_recurring_builder_feedback,
-} from "./recurring_fields_ui.ts";
-// Re-export so external callers (tests, other modules) can still reach these
-// without importing compose_send_menu_popover directly.
-export {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
 import * as scheduled_messages from "./scheduled_messages.ts";
 import {parse_html} from "./ui_util.ts";
 import {user_settings} from "./user_settings.ts";
@@ -37,7 +28,87 @@ export const SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS = 60 * 1000;
 const ENTER_SENDS_SELECTION_DELAY = 600;
 
 let send_later_popover_keyboard_toggle = false;
+const WEEKDAY_TO_NUMBER = new Map([
+    ["MO", 0],
+    ["TU", 1],
+    ["WE", 2],
+    ["TH", 3],
+    ["FR", 4],
+    ["SA", 5],
+    ["SU", 6],
+]);
 
+function set_recurring_builder_feedback(
+    $feedback: JQuery,
+    state: "error" | "success",
+    message: string,
+): void {
+    $feedback.removeClass("recurring-feedback-error recurring-feedback-success");
+    $feedback.addClass(
+        state === "error" ? "recurring-feedback-error" : "recurring-feedback-success",
+    );
+    $feedback.text(message);
+}
+
+function get_ordinal_day_label(day: number): string {
+    const remainder_hundred = day % 100;
+    if (remainder_hundred >= 11 && remainder_hundred <= 13) {
+        return `${day}th`;
+    }
+
+    switch (day % 10) {
+        case 1:
+            return `${day}st`;
+        case 2:
+            return `${day}nd`;
+        case 3:
+            return `${day}rd`;
+        default:
+            return `${day}th`;
+    }
+}
+
+function get_monthly_day_option_label(day: number): string {
+    return get_ordinal_day_label(day);
+}
+
+function get_monthly_ordinal_label(ordinal: string): string {
+    switch (ordinal) {
+        case "first":
+            return $t({defaultMessage: "first"});
+        case "second":
+            return $t({defaultMessage: "second"});
+        case "third":
+            return $t({defaultMessage: "third"});
+        case "fourth":
+            return $t({defaultMessage: "fourth"});
+        case "last":
+            return $t({defaultMessage: "last"});
+        default:
+            return ordinal;
+    }
+}
+
+function get_monthly_weekday_label(weekday: string): string {
+    switch (weekday) {
+        case "MO":
+            return $t({defaultMessage: "Monday"});
+        case "TU":
+            return $t({defaultMessage: "Tuesday"});
+        case "WE":
+            return $t({defaultMessage: "Wednesday"});
+        case "TH":
+            return $t({defaultMessage: "Thursday"});
+        case "FR":
+            return $t({defaultMessage: "Friday"});
+        case "SA":
+            return $t({defaultMessage: "Saturday"});
+        case "SU":
+            return $t({defaultMessage: "Sunday"});
+        default:
+            return weekday;
+    }
+}
 
 export function get_compose_recurring_destination_summary(): string {
     if (compose_state.get_message_type() === "stream") {
@@ -53,16 +124,227 @@ export function get_compose_recurring_destination_summary(): string {
     return $t({defaultMessage: "Will send to {recipients}"}, {recipients});
 }
 
-// DEPRECATED: initialize_recurring_builder is no longer wired to the popover
-// since the unified scheduled-message modal replaced the old send-later
-// recurrence UI.  Kept here so it can be restored easily if needed.
-// To restore: un-comment this function and its two call sites below
-// (in onMount and update_send_later_options).
-/*
-function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
-    initialize_recurring_fields($popper, get_compose_recurring_destination_summary());
+export function get_recurring_schedule_request_data($popper: JQuery):
+    | {
+          recurrence_days: string;
+          recurrence_type: string;
+          scheduled_time: string;
+      }
+    | {
+          error_message: string;
+      } {
+    const recurrence = String($popper.find(".recurring-frequency-input").val() ?? "");
+    const send_time = String($popper.find(".recurring-time-input").val() ?? "");
 
+    if (recurrence === "" || send_time === "") {
+        return {
+            error_message: $t({defaultMessage: "Select a recurrence and time."}),
+        };
+    }
+
+    if (recurrence === "weekly") {
+        const selected_weekdays: number[] = [];
+        $popper.find<HTMLInputElement>(".recurring-weekday:checked").each(function () {
+            const weekday = WEEKDAY_TO_NUMBER.get(String($(this).val()));
+            if (weekday !== undefined) {
+                selected_weekdays.push(weekday);
+            }
+        });
+
+        if (selected_weekdays.length === 0) {
+            return {
+                error_message: $t({
+                    defaultMessage: "For weekly recurrence, choose at least one day.",
+                }),
+            };
+        }
+
+        return {
+            recurrence_type: recurrence,
+            recurrence_days: JSON.stringify(selected_weekdays),
+            scheduled_time: send_time,
+        };
+    }
+
+    if (recurrence === "monthly") {
+        const selected_monthly_mode = String(
+            $popper.find(".recurring-monthly-mode:checked").first().val() ?? "day",
+        );
+
+        let recurrence_days:
+            | {
+                  day: number;
+                  type: "calendar_day";
+              }
+            | {
+                  ordinal: number;
+                  type: "ordinal_weekday";
+                  weekday: number;
+              };
+
+        if (selected_monthly_mode === "last_day") {
+            recurrence_days = {type: "calendar_day", day: -1};
+        } else if (selected_monthly_mode === "weekday") {
+            const ordinal_map = new Map([
+                ["first", 1],
+                ["second", 2],
+                ["third", 3],
+                ["fourth", 4],
+                ["last", -1],
+            ]);
+            const selected_ordinal = String(
+                $popper.find(".recurring-monthly-ordinal-input").val() ?? "",
+            );
+            const selected_weekday = String(
+                $popper.find(".recurring-monthly-weekday-input").val() ?? "",
+            );
+            const ordinal = ordinal_map.get(selected_ordinal);
+            const weekday = WEEKDAY_TO_NUMBER.get(selected_weekday);
+
+            if (ordinal === undefined || weekday === undefined) {
+                return {
+                    error_message: $t({
+                        defaultMessage: "For monthly recurrence, choose a weekday rule.",
+                    }),
+                };
+            }
+
+            recurrence_days = {
+                type: "ordinal_weekday",
+                ordinal,
+                weekday,
+            };
+        } else {
+            const selected_monthday = Number($popper.find(".recurring-monthday-input").val() ?? "");
+            if (!Number.isInteger(selected_monthday)) {
+                return {
+                    error_message: $t({
+                        defaultMessage: "For monthly recurrence, choose a day of the month.",
+                    }),
+                };
+            }
+            recurrence_days = {type: "calendar_day", day: selected_monthday};
+        }
+
+        return {
+            recurrence_type: recurrence,
+            recurrence_days: JSON.stringify(recurrence_days),
+            scheduled_time: send_time,
+        };
+    }
+
+    return {
+        recurrence_type: recurrence,
+        recurrence_days: JSON.stringify([]),
+        scheduled_time: send_time,
+    };
+}
+
+function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
+    if ($popper.data("recurring-builder-initialized") === true) {
+        return;
+    }
     const $feedback = $popper.find(".recurring-builder-feedback");
+    $popper.data("recurring-builder-initialized", true);
+    const $frequency = $popper.find(".recurring-frequency-input");
+    const $weekly_options = $popper.find(".recurring-weekly-options");
+    const $monthly_options = $popper.find(".recurring-monthly-options");
+    const $monthday_input = $popper.find(".recurring-monthday-input");
+    const $monthly_ordinal_input = $popper.find(".recurring-monthly-ordinal-input");
+    const $monthly_weekday_input = $popper.find(".recurring-monthly-weekday-input");
+    const $monthly_mode_inputs = $popper.find<HTMLInputElement>(".recurring-monthly-mode");
+    const $short_month_note = $popper.find(".recurring-short-month-note");
+    const $monthly_summary = $popper.find(".recurring-monthly-summary");
+    const $destination_summary = $popper.find(".recurring-builder-destination-summary");
+    $destination_summary.text(get_compose_recurring_destination_summary());
+
+    for (let day = 1; day <= 31; day += 1) {
+        $monthday_input.append(
+            $("<option>").attr("value", day).text(get_monthly_day_option_label(day)),
+        );
+    }
+    $monthday_input.val("1");
+
+    for (const ordinal of ["first", "second", "third", "fourth", "last"]) {
+        $monthly_ordinal_input.append(
+            $("<option>").attr("value", ordinal).text(get_monthly_ordinal_label(ordinal)),
+        );
+    }
+    $monthly_ordinal_input.val("first");
+
+    for (const weekday of ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]) {
+        $monthly_weekday_input.append(
+            $("<option>").attr("value", weekday).text(get_monthly_weekday_label(weekday)),
+        );
+    }
+    $monthly_weekday_input.val("MO");
+
+    const get_selected_monthly_mode = (): string => {
+        const selected_monthly_mode = $monthly_mode_inputs.filter(":checked").first().val();
+        return typeof selected_monthly_mode === "string" ? selected_monthly_mode : "day";
+    };
+
+    const refresh_monthly_selector = (): void => {
+        const selected_monthly_mode = get_selected_monthly_mode();
+        const use_day_selector = selected_monthly_mode === "day";
+        const use_weekday_selector = selected_monthly_mode === "weekday";
+        $monthday_input.prop("disabled", !use_day_selector);
+        $monthly_ordinal_input.prop("disabled", !use_weekday_selector);
+        $monthly_weekday_input.prop("disabled", !use_weekday_selector);
+
+        const selected_monthday = Number($monthday_input.val());
+        $short_month_note.toggleClass(
+            "recurring-hidden",
+            !(selected_monthly_mode === "day" && selected_monthday >= 29),
+        );
+    };
+
+    const refresh_monthly_summary = (): void => {
+        const selected_monthly_mode = get_selected_monthly_mode();
+        let summary = "";
+
+        if (selected_monthly_mode === "last_day") {
+            summary = $t({defaultMessage: "Repeats on the last day of every month."});
+        } else if (selected_monthly_mode === "weekday") {
+            const ordinal = String($monthly_ordinal_input.val() ?? "first");
+            const weekday = String($monthly_weekday_input.val() ?? "MO");
+            summary = $t(
+                {defaultMessage: "Repeats on the {ordinal} {weekday} of every month."},
+                {
+                    ordinal: get_monthly_ordinal_label(ordinal),
+                    weekday: get_monthly_weekday_label(weekday),
+                },
+            );
+        } else {
+            const selected_monthday = Number($monthday_input.val());
+            summary = $t(
+                {defaultMessage: "Repeats on the {day} of every month."},
+                {day: get_ordinal_day_label(selected_monthday)},
+            );
+        }
+
+        $monthly_summary.text(summary);
+    };
+
+    const refresh_custom_options = (): void => {
+        const recurrence = $frequency.val();
+        $weekly_options.toggleClass("recurring-hidden", recurrence !== "weekly");
+        $monthly_options.toggleClass("recurring-hidden", recurrence !== "monthly");
+    };
+    refresh_custom_options();
+    refresh_monthly_selector();
+    refresh_monthly_summary();
+    $frequency.on("change", refresh_custom_options);
+    $monthly_mode_inputs.on("change", () => {
+        refresh_monthly_selector();
+        refresh_monthly_summary();
+    });
+    $monthday_input.on("change", () => {
+        refresh_monthly_selector();
+        refresh_monthly_summary();
+    });
+    $monthly_ordinal_input.on("change", refresh_monthly_summary);
+    $monthly_weekday_input.on("change", refresh_monthly_summary);
 
     $popper.on("click", ".submit-recurring-draft", (e) => {
         if (!compose_validate.validate(true)) {
@@ -147,7 +429,6 @@ function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance)
         e.stopPropagation();
     });
 }
-*/
 
 function set_compose_box_schedule(element: HTMLElement): number {
     const send_stamp = element.getAttribute("data-send-stamp");
@@ -221,10 +502,9 @@ export function open_schedule_message_menu(
                 );
             }
             const $popper = $(instance.popper);
-            // DEPRECATED: recurring builder wired here by the old popover UI.
-            // if (remind_message_id === undefined) {
-            //     initialize_recurring_builder($popper, instance);
-            // }
+            if (remind_message_id === undefined) {
+                initialize_recurring_builder($popper, instance);
+            }
             const message_schedule_callback = (time: string | number): void => {
                 if (remind_message_id !== undefined) {
                     do_schedule_reminder(
@@ -402,19 +682,14 @@ export function initialize(): void {
                     $("textarea#compose-textarea").trigger("focus");
                 }, ENTER_SENDS_SELECTION_DELAY);
             });
-            // DEPRECATED: old single-message scheduler click handler.
-            // $popper.one("click", ".open_send_later_modal", () => {
-            //     popover_menus.hide_current_popover_if_visible(instance);
-            //     open_schedule_message_menu(undefined, util.the($("#send_later i")));
-            // });
-            // DEPRECATED: old batch-only scheduler click handler.
-            // $popper.one("click", ".open_batch_schedule_modal", () => {
-            //     popover_menus.hide_current_popover_if_visible(instance);
-            //     batch_scheduled_messages_ui.open_batch_modal();
-            // });
-            $popper.one("click", ".open_unified_schedule_modal", () => {
+            // Handle Send later clicks
+            $popper.one("click", ".open_send_later_modal", () => {
                 popover_menus.hide_current_popover_if_visible(instance);
-                unified_scheduled_message_ui.open_unified_scheduled_modal();
+                open_schedule_message_menu(undefined, util.the($("#send_later i")));
+            });
+            $popper.one("click", ".open_batch_schedule_modal", () => {
+                popover_menus.hide_current_popover_if_visible(instance);
+                batch_scheduled_messages_ui.open_batch_modal();
             });
             $popper.one("click", ".compose_new_message", () => {
                 drafts.update_draft();
@@ -461,10 +736,9 @@ export function update_send_later_options(): void {
         const filtered_send_opts = scheduled_messages.get_filtered_send_opts(now);
         const $new_send_later_options = $(render_schedule_message_popover(filtered_send_opts));
         $("#send-later-options").replaceWith($new_send_later_options);
-        // DEPRECATED: recurring builder no longer needed in the refreshed popover.
-        // const instance = popover_menus.popover_instances.send_later_options;
-        // if (instance !== null) {
-        //     initialize_recurring_builder($new_send_later_options, instance);
-        // }
+        const instance = popover_menus.popover_instances.send_later_options;
+        if (instance !== null) {
+            initialize_recurring_builder($new_send_later_options, instance);
+        }
     }
 }

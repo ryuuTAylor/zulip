@@ -290,71 +290,16 @@ def create_batch_scheduled_messages(
         StringConstraints(min_length=1, max_length=10000, strip_whitespace=True),
     ],
     destinations: Json[list[dict[str, Any]]],
-    scheduled_delivery_timestamp: Json[int] | None = None,
+    scheduled_delivery_timestamp: Json[int],
     batch_label: Annotated[str | None, StringConstraints(max_length=200)] = None,
     read_by_sender: Json[bool] | None = None,
-    recurrence_type: Annotated[
-        Annotated[str, check_string_in_validator(VALID_RECURRENCE_TYPES)] | None,
-        ApiParamConfig("recurrence_type"),
-    ] = None,
-    recurrence_days: Json[list[int] | dict[str, str | int]] | None = None,
-    scheduled_time: str | None = None,
-    timezone: str | None = None,
 ) -> HttpResponse:
-    """Create a batch of scheduled messages — one per destination — sharing a single batch_group_id.
-
-    For one-time delivery, supply scheduled_delivery_timestamp (Unix seconds).
-    For recurring delivery, supply recurrence_type, recurrence_days, scheduled_time,
-    and optionally timezone; scheduled_delivery_timestamp must not be set in that case.
-    """
+    """Create a batch of scheduled messages — one per destination — sharing a single batch_group_id."""
     _validate_batch_destinations(destinations)
 
-    # Resolve delivery time and optional recurrence parameters, mirroring the
-    # logic in create_scheduled_message_backend.
-    validated_recurrence_days: list[int] | dict[str, str | int] | None = None
-    parsed_scheduled_time = None
-    timezone_name = timezone.strip() if timezone is not None else None
-    if timezone_name == "":
-        timezone_name = None
-
-    has_recurrence_fields = any(
-        value is not None for value in (recurrence_type, recurrence_days, scheduled_time, timezone)
-    )
-
-    if recurrence_type is None:
-        if has_recurrence_fields:
-            raise JsonableError(
-                _("recurrence_type is required when scheduling a recurring message.")
-            )
-        if scheduled_delivery_timestamp is None:
-            raise JsonableError(_("scheduled_delivery_timestamp is required."))
-        deliver_at = timestamp_to_datetime(scheduled_delivery_timestamp)
-        if deliver_at <= timezone_now():
-            raise DeliveryTimeNotInFutureError
-    else:
-        if scheduled_delivery_timestamp is not None:
-            raise JsonableError(
-                _("scheduled_delivery_timestamp is only supported for one-time scheduled messages.")
-            )
-        if scheduled_time is None:
-            raise JsonableError(_("scheduled_time is required for recurring scheduled messages."))
-        try:
-            parsed_scheduled_time = parse_scheduled_time(scheduled_time)
-        except ValueError as e:
-            raise JsonableError(_(str(e))) from e
-
-        validated_recurrence_days = recurrence_days if recurrence_days is not None else []
-        try:
-            validate_recurrence_days(validated_recurrence_days, recurrence_type)
-        except ValueError as e:
-            raise JsonableError(_(str(e))) from e
-
-        deliver_at = compute_next_delivery(
-            recurrence_type,
-            validated_recurrence_days,
-            parsed_scheduled_time,
-            timezone_now(),
-        )
+    deliver_at = timestamp_to_datetime(scheduled_delivery_timestamp)
+    if deliver_at <= timezone_now():
+        raise DeliveryTimeNotInFutureError
 
     client = RequestNotes.get_notes(request).client
     assert client is not None
@@ -371,10 +316,6 @@ def create_batch_scheduled_messages(
         realm=user_profile.realm,
         batch_label=batch_label,
         read_by_sender=read_by_sender,
-        recurrence_type=recurrence_type,
-        recurrence_days=validated_recurrence_days,
-        scheduled_time=parsed_scheduled_time,
-        timezone=timezone_name,
     )
     return json_success(
         request,
