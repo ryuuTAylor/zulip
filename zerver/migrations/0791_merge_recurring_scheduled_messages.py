@@ -1,7 +1,11 @@
 from django.db import migrations
+from django.db.backends.base.schema import BaseDatabaseSchemaEditor
+from django.db.migrations.state import StateApps
 
 
-def migrate_recurring_scheduled_messages(apps, schema_editor) -> None:
+def migrate_recurring_scheduled_messages(
+    apps: StateApps, schema_editor: BaseDatabaseSchemaEditor
+) -> None:
     from zerver.lib.markdown import markdown_convert
     from zerver.lib.recipient_users import recipient_for_user_profiles
     from zerver.models import Client, Message, ScheduledMessage, Stream, UserProfile

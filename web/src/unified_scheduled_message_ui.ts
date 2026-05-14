@@ -20,12 +20,12 @@ import render_unified_scheduled_message_modal from "../templates/unified_schedul
 import * as channel from "./channel.ts";
 import * as compose_state from "./compose_state.ts";
 import * as composebox_typeahead from "./composebox_typeahead.ts";
-import {initialize_recurring_fields, get_recurring_schedule_request_data} from "./recurring_fields_ui.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
-import * as input_pill from "./input_pill.ts";
+import type * as input_pill from "./input_pill.ts";
 import * as people from "./people.ts";
 import * as pill_typeahead from "./pill_typeahead.ts";
+import {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
 import * as saved_snippets_ui from "./saved_snippets_ui.ts";
 import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
@@ -33,7 +33,7 @@ import * as ui_report from "./ui_report.ts";
 import * as user_pill from "./user_pill.ts";
 
 // ---------------------------------------------------------------------------
-// Destination state (mirrors batch_scheduled_messages_ui.ts)
+// Destination state
 // ---------------------------------------------------------------------------
 
 type StreamDestination = {type: "stream"; stream_id: number; topic: string};
@@ -140,15 +140,18 @@ function populate_stream_select(): void {
 }
 
 function update_topic_typeahead(): void {
+    // Always tear down the previous typeahead before rebinding so listeners
+    // don't accumulate on #unified-topic-input across stream switches.
+    current_topic_typeahead?.unlisten();
+    current_topic_typeahead = null;
+
     const stream_id_str = ($<HTMLSelectElement>("#unified-stream-select").val() ?? "").toString();
     if (!stream_id_str) {
-        current_topic_typeahead = null;
         return;
     }
     const stream_id = Number.parseInt(stream_id_str, 10);
     const sub = sub_store.get(stream_id);
     if (sub === undefined) {
-        current_topic_typeahead = null;
         return;
     }
     current_topic_typeahead = composebox_typeahead.initialize_topic_edit_typeahead(
@@ -182,6 +185,7 @@ function add_stream_destination(): void {
 
     $<HTMLSelectElement>("#unified-stream-select").val("");
     $<HTMLInputElement>("#unified-topic-input").val("");
+    current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
 }
 
@@ -335,6 +339,7 @@ function submit_unified_form(): void {
             // the dialog framework reuses the DOM element.
             pending_destinations = [];
             dm_pill_widget = null;
+            current_topic_typeahead?.unlisten();
             current_topic_typeahead = null;
             // Also clear the chip list DOM while the modal is still in the tree.
             $("#unified-destinations-list").empty();
@@ -404,6 +409,7 @@ function post_render_unified_modal(): void {
 export function open_unified_scheduled_modal(): void {
     pending_destinations = [];
     dm_pill_widget = null;
+    current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
     dialog_widget.launch({
         modal_title_html: $t_html({defaultMessage: "Schedule message"}),

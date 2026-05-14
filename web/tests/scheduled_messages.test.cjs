@@ -228,7 +228,7 @@ run_test("format_scheduled_delivery_label formats recurring scheduled messages",
             scheduled_time: "09:00",
             timezone: null,
         }),
-        "translated: Daily at 09:00 UTC",
+        "translated: Daily at 9:00 AM (UTC)",
     );
 
     assert.equal(
@@ -245,6 +245,6 @@ run_test("format_scheduled_delivery_label formats recurring scheduled messages",
             scheduled_time: "10:30",
             timezone: null,
         }),
-        "translated: Monthly on the last day at 10:30 UTC",
+        "translated: Monthly on the last day at 10:30 AM (UTC)",
     );
 });

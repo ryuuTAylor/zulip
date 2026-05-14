@@ -2,16 +2,12 @@ import $ from "jquery";
 import assert from "minimalistic-assert";
 import * as tippy from "tippy.js";
 
-import render_compose_banner from "../templates/compose_banner/compose_banner.hbs";
 import render_schedule_message_popover from "../templates/popovers/schedule_message_popover.hbs";
 import render_send_later_popover from "../templates/popovers/send_later_popover.hbs";
 
-import * as batch_scheduled_messages_ui from "./batch_scheduled_messages_ui.ts";
-import * as unified_scheduled_message_ui from "./unified_scheduled_message_ui.ts";
 import * as blueslip from "./blueslip.ts";
 import * as channel from "./channel.ts";
 import * as compose from "./compose.ts";
-import * as compose_banner from "./compose_banner.ts";
 import * as compose_state from "./compose_state.ts";
 import * as compose_validate from "./compose_validate.ts";
 import * as drafts from "./drafts.ts";
@@ -20,18 +16,15 @@ import {$t} from "./i18n.ts";
 import * as message_reminder from "./message_reminder.ts";
 import * as people from "./people.ts";
 import * as popover_menus from "./popover_menus.ts";
-import {
-    get_recurring_schedule_request_data,
-    initialize_recurring_fields,
-    set_recurring_builder_feedback,
-} from "./recurring_fields_ui.ts";
+import * as scheduled_messages from "./scheduled_messages.ts";
+import {parse_html} from "./ui_util.ts";
+import * as unified_scheduled_message_ui from "./unified_scheduled_message_ui.ts";
+import {user_settings} from "./user_settings.ts";
+import * as util from "./util.ts";
+
 // Re-export so external callers (tests, other modules) can still reach these
 // without importing compose_send_menu_popover directly.
 export {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
-import * as scheduled_messages from "./scheduled_messages.ts";
-import {parse_html} from "./ui_util.ts";
-import {user_settings} from "./user_settings.ts";
-import * as util from "./util.ts";
 
 export const SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS = 60 * 1000;
 const ENTER_SENDS_SELECTION_DELAY = 600;
@@ -52,102 +45,6 @@ export function get_compose_recurring_destination_summary(): string {
     );
     return $t({defaultMessage: "Will send to {recipients}"}, {recipients});
 }
-
-// DEPRECATED: initialize_recurring_builder is no longer wired to the popover
-// since the unified scheduled-message modal replaced the old send-later
-// recurrence UI.  Kept here so it can be restored easily if needed.
-// To restore: un-comment this function and its two call sites below
-// (in onMount and update_send_later_options).
-/*
-function initialize_recurring_builder($popper: JQuery, instance: tippy.Instance): void {
-    initialize_recurring_fields($popper, get_compose_recurring_destination_summary());
-
-    const $feedback = $popper.find(".recurring-builder-feedback");
-
-    $popper.on("click", ".submit-recurring-draft", (e) => {
-        if (!compose_validate.validate(true)) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
-        const recurring_request = get_recurring_schedule_request_data($popper);
-        if ("error_message" in recurring_request) {
-            set_recurring_builder_feedback($feedback, "error", recurring_request.error_message);
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-        }
-
-        const message_type = compose_state.get_message_type();
-        const req_type = message_type === "private" ? "direct" : message_type;
-        const message_to =
-            message_type === "private"
-                ? compose_state.private_message_recipient_ids()
-                : compose_state.stream_id();
-        const recurring_message_data = {
-            type: req_type,
-            to: JSON.stringify(message_to),
-            topic: message_type === "stream" ? compose_state.topic() : "",
-            content: compose_state.message_content(),
-            recurrence_type: recurring_request.recurrence_type,
-            recurrence_days: recurring_request.recurrence_days,
-            scheduled_time: recurring_request.scheduled_time,
-        };
-
-        const draft_id = drafts.update_draft({
-            no_notify: true,
-            update_count: false,
-            is_sending_saving: true,
-            force_save: true,
-        });
-        assert(draft_id !== undefined);
-
-        const $submit_button = $(e.currentTarget);
-        $submit_button.prop("disabled", true);
-
-        channel.post({
-            url: "/json/scheduled_messages",
-            data: recurring_message_data,
-            success() {
-                drafts.draft_model.deleteDrafts([draft_id]);
-                compose.clear_compose_box();
-                compose.clear_preview_area();
-                compose_banner.clear_message_sent_banners();
-                compose_banner.append_compose_banner_to_banner_list(
-                    $(
-                        render_compose_banner({
-                            banner_type: compose_banner.SUCCESS,
-                            banner_text: $t({
-                                defaultMessage: "Your recurring message has been scheduled.",
-                            }),
-                            classname:
-                                compose_banner.CLASSNAMES.message_scheduled_success_compose_banner,
-                        }),
-                    ),
-                    $("#compose_banners"),
-                );
-                popover_menus.hide_current_popover_if_visible(instance);
-            },
-            error(xhr) {
-                const draft = drafts.draft_model.getDraft(draft_id);
-                assert(draft !== false);
-                draft.is_sending_saving = false;
-                drafts.draft_model.editDraft(draft_id, draft);
-                $submit_button.prop("disabled", false);
-                set_recurring_builder_feedback(
-                    $feedback,
-                    "error",
-                    channel.xhr_error_message("Error scheduling recurring message", xhr),
-                );
-            },
-        });
-
-        e.preventDefault();
-        e.stopPropagation();
-    });
-}
-*/
 
 function set_compose_box_schedule(element: HTMLElement): number {
     const send_stamp = element.getAttribute("data-send-stamp");
@@ -221,10 +118,6 @@ export function open_schedule_message_menu(
                 );
             }
             const $popper = $(instance.popper);
-            // DEPRECATED: recurring builder wired here by the old popover UI.
-            // if (remind_message_id === undefined) {
-            //     initialize_recurring_builder($popper, instance);
-            // }
             const message_schedule_callback = (time: string | number): void => {
                 if (remind_message_id !== undefined) {
                     do_schedule_reminder(
@@ -402,16 +295,6 @@ export function initialize(): void {
                     $("textarea#compose-textarea").trigger("focus");
                 }, ENTER_SENDS_SELECTION_DELAY);
             });
-            // DEPRECATED: old single-message scheduler click handler.
-            // $popper.one("click", ".open_send_later_modal", () => {
-            //     popover_menus.hide_current_popover_if_visible(instance);
-            //     open_schedule_message_menu(undefined, util.the($("#send_later i")));
-            // });
-            // DEPRECATED: old batch-only scheduler click handler.
-            // $popper.one("click", ".open_batch_schedule_modal", () => {
-            //     popover_menus.hide_current_popover_if_visible(instance);
-            //     batch_scheduled_messages_ui.open_batch_modal();
-            // });
             $popper.one("click", ".open_unified_schedule_modal", () => {
                 popover_menus.hide_current_popover_if_visible(instance);
                 unified_scheduled_message_ui.open_unified_scheduled_modal();
@@ -461,10 +344,5 @@ export function update_send_later_options(): void {
         const filtered_send_opts = scheduled_messages.get_filtered_send_opts(now);
         const $new_send_later_options = $(render_schedule_message_popover(filtered_send_opts));
         $("#send-later-options").replaceWith($new_send_later_options);
-        // DEPRECATED: recurring builder no longer needed in the refreshed popover.
-        // const instance = popover_menus.popover_instances.send_later_options;
-        // if (instance !== null) {
-        //     initialize_recurring_builder($new_send_later_options, instance);
-        // }
     }
 }

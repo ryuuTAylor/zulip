@@ -300,9 +300,7 @@ class ScheduledMessageTest(ZulipTestCase):
 
             scheduled_message = ScheduledMessage.objects.get(id=data["scheduled_message_id"])
             self.assertEqual(scheduled_message.recurrence_type, ScheduledMessage.MONTHLY)
-            self.assertEqual(
-                scheduled_message.recurrence_days, {"type": "calendar_day", "day": 15}
-            )
+            self.assertEqual(scheduled_message.recurrence_days, {"type": "calendar_day", "day": 15})
             self.assertEqual(
                 scheduled_message.next_delivery,
                 datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC),
@@ -444,7 +442,9 @@ class ScheduledMessageTest(ZulipTestCase):
             scheduled_message.refresh_from_db()
             self.assertFalse(scheduled_message.delivered)
             self.assertFalse(scheduled_message.failed)
-            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC))
+            self.assertEqual(
+                scheduled_message.next_delivery, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC)
+            )
             self.assertIsInstance(scheduled_message.delivered_message_id, int)
 
     def test_successful_deliver_weekly_recurring_scheduled_message(self) -> None:
@@ -461,7 +461,9 @@ class ScheduledMessageTest(ZulipTestCase):
 
             scheduled_message.refresh_from_db()
             self.assertFalse(scheduled_message.delivered)
-            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 14, 9, 0, 0, tzinfo=UTC))
+            self.assertEqual(
+                scheduled_message.next_delivery, datetime(2026, 1, 14, 9, 0, 0, tzinfo=UTC)
+            )
 
     def test_successful_deliver_monthly_recurring_scheduled_message(self) -> None:
         with time_machine.travel(NOW, tick=False):
@@ -477,7 +479,9 @@ class ScheduledMessageTest(ZulipTestCase):
 
             scheduled_message.refresh_from_db()
             self.assertFalse(scheduled_message.delivered)
-            self.assertEqual(scheduled_message.next_delivery, datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC))
+            self.assertEqual(
+                scheduled_message.next_delivery, datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC)
+            )
 
     def test_worker_skips_future_recurring_scheduled_message(self) -> None:
         with time_machine.travel(NOW, tick=False):
@@ -1180,7 +1184,7 @@ class BatchScheduledMessageRecurrenceTest(ZulipTestCase):
         self.assertEqual(data["count"], 2)
 
         rows = list(ScheduledMessage.objects.filter(batch_group_id=data["batch_group_id"]))
-        self.assertEqual(len(rows), 2)
+        self.assert_length(rows, 2)
         for row in rows:
             self.assertEqual(row.recurrence_type, ScheduledMessage.WEEKLY)
             self.assertEqual(row.recurrence_days, [0, 4])

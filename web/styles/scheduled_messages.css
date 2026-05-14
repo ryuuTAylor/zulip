@@ -36,40 +36,6 @@
     font-family: inherit;
 }
 
-#send-later-options:has(.recurring-batch-builder-item) {
-    --popover-menu-max-width: min(90vw, 34rem);
-    width: min(90vw, 34rem);
-}
-
-#send-later-options:has(.recurring-batch-builder-item) .popover-menu-list {
-    width: 100%;
-}
-
-#send-later-options:has(.recurring-batch-builder-item) .simplebar-content {
-    width: 100% !important;
-}
-
-.recurring-batch-builder-item {
-    display: block;
-}
-
-.recurring-batch-builder-content {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 5px;
-    padding: 0.35em 0.5em;
-    max-width: 100%;
-    color: var(--color-text-item);
-    user-select: text;
-    overflow: hidden;
-}
-
-.recurring-batch-title {
-    margin: 0 0 2px;
-    width: auto;
-    max-width: 100%;
-}
-
 .recurring-batch-grid {
     display: grid;
     grid-template-columns: max-content minmax(10rem, 13rem);
@@ -198,11 +164,6 @@
     border-radius: 12px;
 }
 
-.recurring-builder-feedback {
-    min-height: 0.2em;
-    font-size: 0.8667em;
-}
-
 .validate-recurring-draft {
     width: max-content;
     justify-self: start;
@@ -248,10 +209,6 @@
 
     .recurring-field-input {
         max-width: 100%;
-    }
-
-    #send-later-options:has(.recurring-batch-builder-item) {
-        width: min(92vw, 30rem);
     }
 
     .recurring-monthly-pattern {
