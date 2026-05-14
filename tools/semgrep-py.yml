@@ -96,6 +96,7 @@ rules:
         - zerver/migrations/0387_reupload_realmemoji_again.py
         - zerver/migrations/0443_userpresence_new_table_schema.py
         - zerver/migrations/0493_rename_userhotspot_to_onboardingstep.py
+        - zerver/migrations/0791_merge_recurring_scheduled_messages.py
         - pgroonga/migrations/0002_html_escape_subject.py
 
   - id: use-addindexconcurrently
@@ -124,6 +125,7 @@ rules:
         - zerver/migrations/0443_userpresence_new_table_schema.py
         - zerver/migrations/0446_realmauditlog_zerver_realmauditlog_user_subscriptions_idx.py
         - zerver/migrations/0449_scheduledmessage_zerver_unsent_scheduled_messages_indexes.py
+        - zerver/migrations/0790_scheduledmessage_recurrence_fields.py
         - zilencer/migrations/0016_remote_counts.py
         - zilencer/migrations/0017_installationcount_indexes.py
         - zilencer/migrations/0029_update_remoterealm_indexes.py
