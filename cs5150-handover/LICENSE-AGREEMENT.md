@@ -26,21 +26,21 @@ By committing this file under their authorship — or by adding their
 signature below in a subsequent commit — each team member certifies
 that the statements above apply to their contributions.
 
-| Name | Cornell NetID | GitHub handle | Role |
-|---|---|---|---|
-| Taylor Wang | tw492 | ryuuTAylor | Full-stack — batch scheduling |
-| Bohan Yang | by93 | whoisfrank | Full-stack — recurrence, workflow optimization |
-| Kaylyn Lee | khl62 | _to fill_ | Frontend / UI fixes, report lead |
-| Mohammad Labadi | maa366 | labadi | Code review |
-| Aryan Agarwal | aaa344 | Aryan01104 | Testing & QA, handover |
+| Name            | Cornell NetID | GitHub handle  | Role                                           |
+| --------------- | ------------- | -------------- | ---------------------------------------------- |
+| Taylor Wang     | tw492         | ryuuTAylor     | Full-stack — batch scheduling                  |
+| Bohan Yang      | by93          | whoisfrankyang | Full-stack — recurrence, workflow optimization |
+| Kaylyn Lee      | khl62         | kaylynhl       | Frontend / UI fixes, report lead               |
+| Mohammad Labadi | maa366        | mohdLabadi     | Code review                                    |
+| Aryan Agarwal   | aaa344        | aryan01104     | Testing & QA, handover                         |
 
 **Signed:** by adding a line below with their name, NetID, and the date.
 
 - Aryan Agarwal (aaa344) — 2026-05-13
-- _Taylor Wang (tw492) — YYYY-MM-DD_
-- _Bohan Yang (by93) — YYYY-MM-DD_
-- _Kaylyn Lee (khl62) — YYYY-MM-DD_
-- _Mohammad Labadi (maa366) — YYYY-MM-DD_
+- Taylor Wang (tw492) — 2026-05-13
+- Bohan Yang (by93) — 2026-05-13
+- Kaylyn Lee (khl62) — 2026-05-13
+- Mohammad Labadi (maa366) — 2026-05-13
 
 ## Client acknowledgment
 

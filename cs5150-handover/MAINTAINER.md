@@ -38,7 +38,7 @@ single user-facing dialog:
 
 - **Recurrence.** A scheduled message can repeat daily, weekly on
   selected weekdays, on specific days, or monthly (calendar day,
-  last day, or *n*-th weekday). After each delivery the worker
+  last day, or _n_-th weekday). After each delivery the worker
   recomputes the next delivery time from the recurrence rule and
   leaves the row active.
 
@@ -86,7 +86,7 @@ endpoint, so a user cannot read, edit, or cancel another user's
 scheduled messages.
 
 For the user-facing description of these use cases, see the help
-center article *Schedule a recurring or batch message* at
+center article _Schedule a recurring or batch message_ at
 `starlight_help/src/content/docs/schedule-a-recurring-or-batch-message.mdx`.
 
 ## 3. Architecture
@@ -103,8 +103,8 @@ center article *Schedule a recurring or batch message* at
                   │   (unified_scheduled_message_ui.ts)    │
                   │   - message content + saved snippets   │
                   │   - send-at datetime  OR  recurrence   │
-                  │     (Repeat checkbox + frequency,      │
-                  │      weekday/monthly sub-pattern)      │
+                  │     (Repeat checkbox + frequency       │
+                  │      + weekday/monthly sub-pattern)    │
                   │   - destinations: N×(channel+topic)    │
                   │                  + N×(DM recipient set)│
                   └────────────────────────────────────────┘
@@ -167,8 +167,8 @@ primary technical-debt source of Sprints 2 and 3. PR #6 — the
 `scheduled_time`. A row with `recurrence_type IS NULL` and
 `batch_group_id IS NULL` behaves exactly like an upstream Zulip
 one-time scheduled message; the new fields opt the row into the new
-behaviors. This means the codebase has *one* delivery worker, *one*
-authorization story, and *one* set of tests.
+behaviors. This means the codebase has _one_ delivery worker, _one_
+authorization story, and _one_ set of tests.
 
 ## 4. Data model
 
@@ -177,14 +177,14 @@ and batch jobs. Defined at `zerver/models/scheduled_jobs.py:165`.
 
 ### Columns added by this project
 
-| Column | Type | Purpose |
-|---|---|---|
-| `batch_group_id` | `UUID`, nullable, indexed | NULL for ordinary scheduled messages. Set when multiple rows were created together as a single batch; all rows in the batch share the same UUID. |
-| `batch_label` | `TEXT`, nullable | Optional human-readable name for the batch. |
-| `recurrence_type` | `VARCHAR(20)`, choices, nullable | `daily`, `weekly`, `specific_days`, or `monthly`. NULL means the row is a one-time scheduled message; the row is deleted after a successful send. |
-| `recurrence_days` | `JSONB`, nullable | Rule data. Shape depends on `recurrence_type` — see below. |
-| `scheduled_time` | `TIME`, nullable | UTC time-of-day for recurring delivery. Combined with `recurrence_days` and the previous `next_delivery` to compute the next firing. |
-| `next_delivery` | `DATETIME`, nullable, indexed | UTC timestamp of the next firing. The worker selects from this column ordered ascending. After a successful recurring send, the action layer rewrites this from the recurrence rule; for one-time jobs the row is marked delivered and not rescheduled. |
+| Column            | Type                             | Purpose                                                                                                                                                                                                                                                 |
+| ----------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `batch_group_id`  | `UUID`, nullable, indexed        | NULL for ordinary scheduled messages. Set when multiple rows were created together as a single batch; all rows in the batch share the same UUID.                                                                                                        |
+| `batch_label`     | `TEXT`, nullable                 | Optional human-readable name for the batch.                                                                                                                                                                                                             |
+| `recurrence_type` | `VARCHAR(20)`, choices, nullable | `daily`, `weekly`, `specific_days`, or `monthly`. NULL means the row is a one-time scheduled message; the row is deleted after a successful send.                                                                                                       |
+| `recurrence_days` | `JSONB`, nullable                | Rule data. Shape depends on `recurrence_type` — see below.                                                                                                                                                                                              |
+| `scheduled_time`  | `TIME`, nullable                 | UTC time-of-day for recurring delivery. Combined with `recurrence_days` and the previous `next_delivery` to compute the next firing.                                                                                                                    |
+| `next_delivery`   | `DATETIME`, nullable, indexed    | UTC timestamp of the next firing. The worker selects from this column ordered ascending. After a successful recurring send, the action layer rewrites this from the recurrence rule; for one-time jobs the row is marked delivered and not rescheduled. |
 
 The original `scheduled_timestamp` column is retained and is set equal
 to `next_delivery` at creation. `scheduled_timestamp` is unindexed for
@@ -204,7 +204,7 @@ RecurrenceDays = list[int] | dict[str, str | int]
 - **`monthly`**: dict with one of two shapes:
   - `{"type": "calendar_day", "day": N}` where `N` is `1..31` or `-1`
     for the last day. Days beyond the month's length are clamped to
-    the last day of that month (e.g. `31` becomes `28` in February).
+    the last day of that month (e.g., `31` becomes `28` in February).
   - `{"type": "ordinal_weekday", "ordinal": O, "weekday": W}` where
     `O ∈ {1, 2, 3, 4, -1}` (`-1` is "last") and `W ∈ {0..6}`
     (Monday=0). Months without an `O`-th occurrence of `W` are
@@ -233,17 +233,17 @@ Pure functions shared across the action, view, and worker layers. No
 DB writes here; everything is either DB read, computation, or
 validation.
 
-| Function | Line | Purpose |
-|---|---|---|
-| `parse_scheduled_time` | 22 | Convert `"HH:MM"` to a `datetime.time` (UTC). |
-| `validate_recurrence_days` | 34 | Reject malformed `recurrence_days` for a given `recurrence_type`. Raises `ValueError`. |
-| `access_scheduled_message` | 59 | Owner-scoped lookup by id; raises `JsonableError` if not found / not owned. |
-| `get_undelivered_scheduled_messages` | 70 | Query used by `GET /scheduled_messages`. |
-| `get_undelivered_reminders` | 87 | Same shape, but for reminder-type rows. |
-| `_next_calendar_day_monthly` | 109 | Compute next calendar-day fire for a monthly job. |
-| `_next_ordinal_weekday_monthly` | 138 | Compute next *n*-th-weekday fire for a monthly job. |
-| `validate_monthly_rule` | 184 | Verify a monthly `recurrence_days` dict has a valid shape. |
-| `compute_next_delivery` | 220 | Top-level next-fire computation for any recurrence type. Returns a UTC-aware datetime. Raises `ValueError` for invalid input. |
+| Function                             | Line | Purpose                                                                                                                       |
+| ------------------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `parse_scheduled_time`               | 22   | Convert `"HH:MM"` to a `datetime.time` (UTC).                                                                                 |
+| `validate_recurrence_days`           | 34   | Reject malformed `recurrence_days` for a given `recurrence_type`. Raises `ValueError`.                                        |
+| `access_scheduled_message`           | 59   | Owner-scoped lookup by id; raises `JsonableError` if not found / not owned.                                                   |
+| `get_undelivered_scheduled_messages` | 70   | Query used by `GET /scheduled_messages`.                                                                                      |
+| `get_undelivered_reminders`          | 87   | Same shape, but for reminder-type rows.                                                                                       |
+| `_next_calendar_day_monthly`         | 109  | Compute next calendar-day fire for a monthly job.                                                                             |
+| `_next_ordinal_weekday_monthly`      | 138  | Compute next _n_-th-weekday fire for a monthly job.                                                                           |
+| `validate_monthly_rule`              | 184  | Verify a monthly `recurrence_days` dict has a valid shape.                                                                    |
+| `compute_next_delivery`              | 220  | Top-level next-fire computation for any recurrence type. Returns a UTC-aware datetime. Raises `ValueError` for invalid input. |
 
 `compute_next_delivery` is the single source of truth for recurrence
 math. It is called from both `do_schedule_messages` /
@@ -255,16 +255,16 @@ from `send_scheduled_message` (to advance after a successful send).
 Side-effectful operations. Each public action wraps DB writes plus
 Tornado event emission.
 
-| Function | Line | Purpose |
-|---|---|---|
-| `check_schedule_message` | 44 | Resolve a single destination + content + time into a `SendMessageRequest` ready for persistence. |
-| `do_schedule_messages` | 114 | Persist one or more pre-validated send-requests as `ScheduledMessage` rows. Returns ids. Used by both the legacy `/scheduled_messages` endpoint and the new batch endpoint. |
-| `do_schedule_batch_messages` | 179 | Wrapper that generates a `batch_group_id`, calls `do_schedule_messages` per destination, and stamps the shared UUID + recurrence fields on every resulting row. Emits a single Tornado event for the whole batch. |
-| `edit_scheduled_message` | 268 | One-time edit path (legacy). The unified frontend does not call this — it cancels + recreates instead. |
-| `delete_scheduled_message` | 397 | Delete a single row by id; owner-scoped. |
-| `send_reminder` | 404 | Deliver a reminder-type row. |
-| `send_scheduled_message` | 431 | Deliver a non-reminder row. For recurring rows, after a successful send this advances `next_delivery` via `compute_next_delivery` instead of marking the row delivered. See lines 486–495. |
-| `try_deliver_one_scheduled_message` | 540 | Worker entry point — see [§7](#7-delivery-worker). |
+| Function                            | Line | Purpose                                                                                                                                                                                                           |
+| ----------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `check_schedule_message`            | 44   | Resolve a single destination + content + time into a `SendMessageRequest` ready for persistence.                                                                                                                  |
+| `do_schedule_messages`              | 114  | Persist one or more pre-validated send-requests as `ScheduledMessage` rows. Returns ids. Used by both the legacy `/scheduled_messages` endpoint and the new batch endpoint.                                       |
+| `do_schedule_batch_messages`        | 179  | Wrapper that generates a `batch_group_id`, calls `do_schedule_messages` per destination, and stamps the shared UUID + recurrence fields on every resulting row. Emits a single Tornado event for the whole batch. |
+| `edit_scheduled_message`            | 268  | One-time edit path (legacy). The unified frontend does not call this — it cancels + recreates instead.                                                                                                            |
+| `delete_scheduled_message`          | 397  | Delete a single row by id; owner-scoped.                                                                                                                                                                          |
+| `send_reminder`                     | 404  | Deliver a reminder-type row.                                                                                                                                                                                      |
+| `send_scheduled_message`            | 431  | Deliver a non-reminder row. For recurring rows, after a successful send this advances `next_delivery` via `compute_next_delivery` instead of marking the row delivered. See lines 486–495.                        |
+| `try_deliver_one_scheduled_message` | 540  | Worker entry point — see [§7](#7-delivery-worker).                                                                                                                                                                |
 
 ### `zerver/views/scheduled_messages.py`
 
@@ -273,16 +273,16 @@ HTTP layer. All endpoints are authenticated via Zulip's standard
 which inject `user_profile: UserProfile`. There are no role checks
 beyond that.
 
-| Endpoint function | Line | Route |
-|---|---|---|
-| `fetch_scheduled_messages` | 47 | `GET /json/scheduled_messages` |
-| `fetch_reminders` | 54 | `GET /json/reminders` |
-| `delete_scheduled_messages` | 59 | `DELETE /json/scheduled_messages/<id>` |
-| `update_scheduled_message_backend` | 70 | `PATCH /json/scheduled_messages/<id>` (legacy edit) |
-| `create_scheduled_message_backend` | 147 | `POST /json/scheduled_messages` (legacy single-destination create) |
-| `_validate_batch_destinations` | 254 | Private helper — see below |
-| `create_batch_scheduled_messages` | 284 | `POST /json/batch_scheduled_messages` |
-| `cancel_batch_scheduled_messages` | 390 | `DELETE /json/batch_scheduled_messages/<batch_group_id>` |
+| Endpoint function                  | Line | Route                                                              |
+| ---------------------------------- | ---- | ------------------------------------------------------------------ |
+| `fetch_scheduled_messages`         | 47   | `GET /json/scheduled_messages`                                     |
+| `fetch_reminders`                  | 54   | `GET /json/reminders`                                              |
+| `delete_scheduled_messages`        | 59   | `DELETE /json/scheduled_messages/<id>`                             |
+| `update_scheduled_message_backend` | 70   | `PATCH /json/scheduled_messages/<id>` (legacy edit)                |
+| `create_scheduled_message_backend` | 147  | `POST /json/scheduled_messages` (legacy single-destination create) |
+| `_validate_batch_destinations`     | 254  | Private helper — see below                                         |
+| `create_batch_scheduled_messages`  | 284  | `POST /json/batch_scheduled_messages`                              |
+| `cancel_batch_scheduled_messages`  | 390  | `DELETE /json/batch_scheduled_messages/<batch_group_id>`           |
 
 `_validate_batch_destinations` accepts a list of destination dicts and
 verifies that each `stream` destination has a valid `stream_id` plus
@@ -300,15 +300,15 @@ produce multiple `ScheduledMessage` rows.
 
 **Request body**
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `content` | string | yes | Message body (markdown). |
-| `destinations` | JSON array | yes | One or more destination objects. |
-| `scheduled_delivery_timestamp` | int (epoch sec) | for one-time | Required when no recurrence. |
-| `recurrence_type` | string | for recurring | `daily`, `weekly`, `specific_days`, `monthly`. |
-| `recurrence_days` | JSON | for recurring | Shape depends on `recurrence_type` — see [§4](#recurrence_days-shape). |
-| `scheduled_time` | string `"HH:MM"` | for recurring | UTC time-of-day. |
-| `batch_label` | string | no | Optional human-readable batch name. |
+| Field                          | Type             | Required      | Notes                                                                  |
+| ------------------------------ | ---------------- | ------------- | ---------------------------------------------------------------------- |
+| `content`                      | string           | yes           | Message body (markdown).                                               |
+| `destinations`                 | JSON array       | yes           | One or more destination objects.                                       |
+| `scheduled_delivery_timestamp` | int (epoch sec)  | for one-time  | Required when no recurrence.                                           |
+| `recurrence_type`              | string           | for recurring | `daily`, `weekly`, `specific_days`, `monthly`.                         |
+| `recurrence_days`              | JSON             | for recurring | Shape depends on `recurrence_type` — see [§4](#recurrence_days-shape). |
+| `scheduled_time`               | string `"HH:MM"` | for recurring | UTC time-of-day.                                                       |
+| `batch_label`                  | string           | no            | Optional human-readable batch name.                                    |
 
 Each `destinations[i]` is one of:
 
@@ -428,7 +428,7 @@ it in `try_deliver_one_scheduled_message`
 Because the worker query filters on `failed = False`, **a row that
 has failed once will not be retried**, even if it is recurring.
 This treats every failure as terminal: a single transient hiccup
-(e.g. a brief outage of the destination channel) permanently stops
+(e.g., a brief outage of the destination channel) permanently stops
 an otherwise-healthy recurring job. See
 [§12](#12-known-issues--future-work).
 
@@ -441,23 +441,23 @@ Owner of the unified-modal dialog. Exposes one public entry point —
 into the following internal functions (each one is short; jump to
 them in the file by name):
 
-| Function | Line | Role |
-|---|---|---|
-| `render_pending_destinations` | 69 | Render the destination chip list |
-| `remove_destination` | 96 | Remove a chip by index |
-| `is_duplicate_stream_destination` | 105 | Reject duplicate channel+topic |
-| `is_duplicate_direct_destination` | 115 | Reject duplicate DM recipient set |
-| `populate_stream_select` | 130 | Fill the stream dropdown |
-| `update_topic_typeahead` | 142 | (Re)bind the topic typeahead on stream change. Unlisten lifecycle added 2026-05-13. |
-| `add_stream_destination` | 164 | Validate and append a channel destination |
-| `init_dm_pill_widget` | 196 | Set up the DM pill widget via `pill_typeahead.set_up_user` |
-| `clear_dm_pills` | 207 | Reset DM pills |
-| `add_direct_destination` | 218 | Validate and append a DM destination |
-| `set_datetime_min` | 249 | Constrain the datetime input to "now or later" |
-| `wire_repeat_toggle` | 262 | Toggle visibility of the recurrence section when **Repeat** is checked |
-| `submit_unified_form` | 274 | Build the request body and `POST /json/batch_scheduled_messages` |
-| `post_render_unified_modal` | 354 | Run after the dialog framework injects markup |
-| `open_unified_scheduled_modal` | 409 | Public entry point — called by the send-later popover |
+| Function                          | Line | Role                                                                                |
+| --------------------------------- | ---- | ----------------------------------------------------------------------------------- |
+| `render_pending_destinations`     | 69   | Render the destination chip list                                                    |
+| `remove_destination`              | 96   | Remove a chip by index                                                              |
+| `is_duplicate_stream_destination` | 105  | Reject duplicate channel+topic                                                      |
+| `is_duplicate_direct_destination` | 115  | Reject duplicate DM recipient set                                                   |
+| `populate_stream_select`          | 130  | Fill the stream dropdown                                                            |
+| `update_topic_typeahead`          | 142  | (Re)bind the topic typeahead on stream change. Unlisten lifecycle added 2026-05-13. |
+| `add_stream_destination`          | 164  | Validate and append a channel destination                                           |
+| `init_dm_pill_widget`             | 196  | Set up the DM pill widget via `pill_typeahead.set_up_user`                          |
+| `clear_dm_pills`                  | 207  | Reset DM pills                                                                      |
+| `add_direct_destination`          | 218  | Validate and append a DM destination                                                |
+| `set_datetime_min`                | 249  | Constrain the datetime input to "now or later"                                      |
+| `wire_repeat_toggle`              | 262  | Toggle visibility of the recurrence section when **Repeat** is checked              |
+| `submit_unified_form`             | 274  | Build the request body and `POST /json/batch_scheduled_messages`                    |
+| `post_render_unified_modal`       | 354  | Run after the dialog framework injects markup                                       |
+| `open_unified_scheduled_modal`    | 409  | Public entry point — called by the send-later popover                               |
 
 The file's module docstring (lines 1–13) is the canonical short
 description of the modal's behavior and submit-routing rules.
@@ -468,9 +468,9 @@ Stateless helpers for the recurrence form fields. Used by the unified
 modal (and previously by the popover, removed in cleanup commit
 `6963f9d6cc`). Two exports drive recurrence:
 
-| Function | Purpose |
-|---|---|
-| `initialize_recurring_fields($root)` | Wire up frequency dropdown, weekday checkboxes, monthly radio sub-mode, and the live monthly summary. |
+| Function                                     | Purpose                                                                                                                                                                                        |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize_recurring_fields($root)`         | Wire up frequency dropdown, weekday checkboxes, monthly radio sub-mode, and the live monthly summary.                                                                                          |
 | `get_recurring_schedule_request_data($root)` | Serialize the form back to the wire shape (`recurrence_type` + `recurrence_days` + `scheduled_time`). Returns `{error_message}` on validation failure so the caller can surface inline errors. |
 
 ### `web/templates/unified_scheduled_message_modal.hbs`
@@ -503,12 +503,12 @@ chips.
 
 Coverage is organized across four levels:
 
-| Level | Scope | Tool |
-|---|---|---|
-| Unit | Recurrence math (`compute_next_delivery`, monthly rule edge cases) | Django `unittest` |
-| API/integration | View endpoints; validation; batch creation/cancellation | Django test client |
-| Delivery workflow | Worker loop; recurring next-delivery advancement; failed-destination handling | Django + mock + freezegun |
-| User/UI | Compose-box interaction; form validation; scheduled-list display | Manual (course documents the protocol in the Sprint 3 user-testing appendix) |
+| Level             | Scope                                                                         | Tool                                                                         |
+| ----------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unit              | Recurrence math (`compute_next_delivery`, monthly rule edge cases)            | Django `unittest`                                                            |
+| API/integration   | View endpoints; validation; batch creation/cancellation                       | Django test client                                                           |
+| Delivery workflow | Worker loop; recurring next-delivery advancement; failed-destination handling | Django + mock + freezegun                                                    |
+| User/UI           | Compose-box interaction; form validation; scheduled-list display              | Manual (course documents the protocol in the Sprint 3 user-testing appendix) |
 
 Tests live in `zerver/tests/test_scheduled_messages.py` (42 test
 methods at the time of writing). Major test classes:
@@ -623,7 +623,7 @@ To fully revert:
 
 1. Cancel any in-flight recurring or batch jobs from the application
    UI (`DELETE /json/batch_scheduled_messages/<batch_group_id>`),
-   *or* in SQL:
+   _or_ in SQL:
    `UPDATE zerver_scheduledmessage SET delivered = TRUE WHERE recurrence_type IS NOT NULL OR batch_group_id IS NOT NULL;`
 2. Reverse-migrate to the migration immediately before `0790`:
    `./manage.py migrate zerver 0789_merge_20260323_2256`.
@@ -688,12 +688,12 @@ ordered roughly by impact.
 ESLint reports seven errors in this file that were present before
 the final-delivery cleanup and were not auto-fixable:
 
-| Line | Rule | Note |
-|---|---|---|
-| 116, 121, 134 | `unicorn/no-array-sort` | `array.sort()` should be `array.toSorted()`. Behavior-preserving for the current call sites (all sorts run on freshly-spread copies), but the migration must verify no caller depends on in-place mutation. |
-| 200 | `no-jquery/no-parse-html-literal` | The destination-chip renderer uses `$(htmlString)`. Template content is already `_.escape`-d, so this is not a current XSS surface; refactoring to DOM building would remove the warning permanently. |
-| 264, 289 | `consistent-type-assertions` | Use `x as T` instead of `<T>x`. Pure style. |
-| 312 | `new-cap` | A capitalized function is being called without `new`. Pure style. |
+| Line          | Rule                              | Note                                                                                                                                                                                                        |
+| ------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 116, 121, 134 | `unicorn/no-array-sort`           | `array.sort()` should be `array.toSorted()`. Behavior-preserving for the current call sites (all sorts run on freshly-spread copies), but the migration must verify no caller depends on in-place mutation. |
+| 200           | `no-jquery/no-parse-html-literal` | The destination-chip renderer uses `$(htmlString)`. Template content is already `_.escape`-d, so this is not a current XSS surface; refactoring to DOM building would remove the warning permanently.       |
+| 264, 289      | `consistent-type-assertions`      | Use `x as T` instead of `<T>x`. Pure style.                                                                                                                                                                 |
+| 312           | `new-cap`                         | A capitalized function is being called without `new`. Pure style.                                                                                                                                           |
 
 ### Recurring rows die on first send failure
 
@@ -701,7 +701,7 @@ When `try_deliver_one_scheduled_message` catches any exception
 from `send_scheduled_message`, it sets `failed = True` on the row
 (`actions/scheduled_messages.py:540` onward). The worker query
 filters on `failed = False`, so a failed row is never retried —
-even if the failure was transient (e.g. a brief network blip, a
+even if the failure was transient (e.g., a brief network blip, a
 temporary `do_send_messages` error, or a momentarily-deactivated
 realm).
 
@@ -712,7 +712,7 @@ stops a recurrence that was otherwise healthy. A better policy
 would be either to differentiate between "definitely permanent"
 errors (deactivated realm, late cutoff) and "possibly transient"
 errors, retrying the latter with backoff, or to count consecutive
-failures per row and only deactivate after N (e.g. 3-5) consecutive
+failures per row and only deactivate after N (e.g., 3-5) consecutive
 failures.
 
 Implementation entry point would be the `except Exception as e:`
@@ -720,7 +720,7 @@ block in `try_deliver_one_scheduled_message`.
 
 ### View-time destination access validation
 
-`_validate_batch_destinations` checks destination *shape* but not
+`_validate_batch_destinations` checks destination _shape_ but not
 whether the calling user can actually send to each destination
 (channel access, DM-recipient existence). Today the resolution
 happens at delivery time; a malformed destination produces a
@@ -755,25 +755,25 @@ cleanup migration could `DROP TABLE` to remove the orphan.
 
 ### Repository paths (quick lookup)
 
-| Concern | Path |
-|---|---|
-| User-facing help article | `starlight_help/src/content/docs/schedule-a-recurring-or-batch-message.mdx` |
-| License agreement | `cs5150-handover/LICENSE-AGREEMENT.md` |
-| Maintainer manual (this file) | `cs5150-handover/MAINTAINER.md` |
-| Backend tests | `zerver/tests/test_scheduled_messages.py` |
-| Backend recurrence math | `zerver/lib/scheduled_messages.py` |
-| Backend actions | `zerver/actions/scheduled_messages.py` |
-| Backend views | `zerver/views/scheduled_messages.py` |
-| Model | `zerver/models/scheduled_jobs.py` (class `ScheduledMessage` at line 165) |
-| Migrations | `zerver/migrations/079{0,1,2}*.py` |
-| Worker | `zerver/management/commands/deliver_scheduled_messages.py` |
-| Supervisor program | `puppet/zulip/templates/supervisor/zulip-once.conf.template.erb` |
-| Unified-modal frontend | `web/src/unified_scheduled_message_ui.ts` |
-| Recurrence form helpers | `web/src/recurring_fields_ui.ts` |
-| Modal template | `web/templates/unified_scheduled_message_modal.hbs` |
-| Recurrence partial | `web/templates/popovers/recurring_fields.hbs` |
-| Styles | `web/styles/scheduled_messages.css` |
-| OpenAPI schema | `zerver/openapi/zulip.yaml` (search for `recurrence_type`) |
+| Concern                       | Path                                                                        |
+| ----------------------------- | --------------------------------------------------------------------------- |
+| User-facing help article      | `starlight_help/src/content/docs/schedule-a-recurring-or-batch-message.mdx` |
+| License agreement             | `cs5150-handover/LICENSE-AGREEMENT.md`                                      |
+| Maintainer manual (this file) | `cs5150-handover/MAINTAINER.md`                                             |
+| Backend tests                 | `zerver/tests/test_scheduled_messages.py`                                   |
+| Backend recurrence math       | `zerver/lib/scheduled_messages.py`                                          |
+| Backend actions               | `zerver/actions/scheduled_messages.py`                                      |
+| Backend views                 | `zerver/views/scheduled_messages.py`                                        |
+| Model                         | `zerver/models/scheduled_jobs.py` (class `ScheduledMessage` at line 165)    |
+| Migrations                    | `zerver/migrations/079{0,1,2}*.py`                                          |
+| Worker                        | `zerver/management/commands/deliver_scheduled_messages.py`                  |
+| Supervisor program            | `puppet/zulip/templates/supervisor/zulip-once.conf.template.erb`            |
+| Unified-modal frontend        | `web/src/unified_scheduled_message_ui.ts`                                   |
+| Recurrence form helpers       | `web/src/recurring_fields_ui.ts`                                            |
+| Modal template                | `web/templates/unified_scheduled_message_modal.hbs`                         |
+| Recurrence partial            | `web/templates/popovers/recurring_fields.hbs`                               |
+| Styles                        | `web/styles/scheduled_messages.css`                                         |
+| OpenAPI schema                | `zerver/openapi/zulip.yaml` (search for `recurrence_type`)                  |
 
 ### External docs
 
