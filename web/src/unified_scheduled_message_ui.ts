@@ -25,7 +25,14 @@ import {$t, $t_html} from "./i18n.ts";
 import type * as input_pill from "./input_pill.ts";
 import * as people from "./people.ts";
 import * as pill_typeahead from "./pill_typeahead.ts";
+<<<<<<< Updated upstream
 import {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
+=======
+import {
+    get_recurring_schedule_request_data,
+    initialize_recurring_fields,
+} from "./recurring_fields_ui.ts";
+>>>>>>> Stashed changes
 import * as saved_snippets_ui from "./saved_snippets_ui.ts";
 import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
@@ -42,9 +49,6 @@ type Destination = StreamDestination | DirectDestination;
 
 let pending_destinations: Destination[] = [];
 let dm_pill_widget: input_pill.InputPillContainer<user_pill.UserPill> | null = null;
-let current_topic_typeahead: ReturnType<
-    typeof composebox_typeahead.initialize_topic_edit_typeahead
-> | null = null;
 
 // ---------------------------------------------------------------------------
 // Error helpers
@@ -83,12 +87,14 @@ function render_pending_destinations(): void {
             });
             label = `DM: ${names.join(", ")}`;
         }
-        const $chip = $(`
+        const $chip = $(
+            `
             <div class="rsm-destination-chip">
                 <span>${label}</span>
                 <button type="button" class="unified-remove-dest-btn" data-idx="${idx}">&times;</button>
             </div>
-        `.trim());
+        `.trim(),
+        );
         $list.append($chip);
     }
 }
@@ -113,12 +119,12 @@ function is_duplicate_stream_destination(stream_id: number, topic: string): bool
 }
 
 function is_duplicate_direct_destination(user_ids: number[]): boolean {
-    const sorted_new = [...user_ids].sort((a, b) => a - b);
+    const sorted_new = user_ids.toSorted((a, b) => a - b);
     return pending_destinations.some((dest) => {
         if (dest.type !== "direct" || dest.user_ids.length !== user_ids.length) {
             return false;
         }
-        const sorted_existing = [...dest.user_ids].sort((a, b) => a - b);
+        const sorted_existing = dest.user_ids.toSorted((a, b) => a - b);
         return sorted_existing.every((id, i) => id === sorted_new[i]);
     });
 }
@@ -131,9 +137,7 @@ function populate_stream_select(): void {
     const $select = $<HTMLSelectElement>("#unified-stream-select");
     $select.find("option:not(:first-child)").remove();
 
-    const subs = [...stream_data.subscribed_subs()].sort((a, b) =>
-        a.name.localeCompare(b.name),
-    );
+    const subs = stream_data.subscribed_subs().toSorted((a, b) => a.name.localeCompare(b.name));
     for (const sub of subs) {
         $select.append($("<option>").val(sub.stream_id).text(sub.name));
     }
@@ -154,7 +158,7 @@ function update_topic_typeahead(): void {
     if (sub === undefined) {
         return;
     }
-    current_topic_typeahead = composebox_typeahead.initialize_topic_edit_typeahead(
+    composebox_typeahead.initialize_topic_edit_typeahead(
         $<HTMLInputElement>("#unified-topic-input"),
         sub.name,
         false,
@@ -185,8 +189,11 @@ function add_stream_destination(): void {
 
     $<HTMLSelectElement>("#unified-stream-select").val("");
     $<HTMLInputElement>("#unified-topic-input").val("");
+<<<<<<< Updated upstream
     current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
+=======
+>>>>>>> Stashed changes
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +204,7 @@ function init_dm_pill_widget(): void {
     const $container = $("#unified-dm-pill-container");
     $container.empty();
     $container.append(
-        $('<div class="input" contenteditable="true" tabindex="0"></div>'),
+        $("<div>").addClass("input").attr("contenteditable", "true").attr("tabindex", "0"),
     );
 
     dm_pill_widget = user_pill.create_pills($container, {exclude_inaccessible_users: true});
@@ -210,7 +217,7 @@ function clear_dm_pills(): void {
     }
     const pill_elements = $("#unified-dm-pill-container").find(".pill").toArray();
     for (const el of pill_elements) {
-        dm_pill_widget.removePill(el);
+        dm_pill_widget.removePill(el, "clear");
     }
     dm_pill_widget.clear_text();
 }
@@ -261,7 +268,7 @@ function set_datetime_min(): void {
 
 function wire_repeat_toggle(): void {
     $("#unified-repeat-checkbox").on("change", function () {
-        const is_recurring = $(this).prop("checked") as boolean;
+        const is_recurring = Boolean($(this).prop("checked"));
         $("#unified-datetime-section").toggle(!is_recurring);
         $("#unified-recurrence-section").toggle(is_recurring);
     });
@@ -286,7 +293,7 @@ function submit_unified_form(): void {
         return;
     }
 
-    const is_recurring = $<HTMLInputElement>("#unified-repeat-checkbox").prop("checked") as boolean;
+    const is_recurring = Boolean($<HTMLInputElement>("#unified-repeat-checkbox").prop("checked"));
 
     const data: Record<string, unknown> = {
         content,
@@ -309,21 +316,15 @@ function submit_unified_form(): void {
         // the time in the user's local zone (e.g. "Daily at 8:06 PM") rather
         // than interpreting it as UTC.
         data["scheduled_time"] = recurring_result.scheduled_time;
-        data["timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        data["timezone"] = new Intl.DateTimeFormat().resolvedOptions().timeZone;
     } else {
         // One-time batch: require a datetime-local value.
-        const datetime_val = (
-            $<HTMLInputElement>("#unified-scheduled-message-datetime").val() ?? ""
-        );
+        const datetime_val = $<HTMLInputElement>("#unified-scheduled-message-datetime").val() ?? "";
         if (!datetime_val) {
-            show_modal_error(
-                $t({defaultMessage: "Please choose a send time."}),
-            );
+            show_modal_error($t({defaultMessage: "Please choose a send time."}));
             return;
         }
-        const scheduled_delivery_timestamp = Math.floor(
-            new Date(datetime_val).getTime() / 1000,
-        );
+        const scheduled_delivery_timestamp = Math.floor(new Date(datetime_val).getTime() / 1000);
         if (scheduled_delivery_timestamp <= Math.floor(Date.now() / 1000)) {
             show_modal_error($t({defaultMessage: "Send time must be in the future."}));
             return;
@@ -339,8 +340,11 @@ function submit_unified_form(): void {
             // the dialog framework reuses the DOM element.
             pending_destinations = [];
             dm_pill_widget = null;
+<<<<<<< Updated upstream
             current_topic_typeahead?.unlisten();
             current_topic_typeahead = null;
+=======
+>>>>>>> Stashed changes
             // Also clear the chip list DOM while the modal is still in the tree.
             $("#unified-destinations-list").empty();
         },
@@ -359,9 +363,8 @@ function post_render_unified_modal(): void {
     wire_repeat_toggle();
 
     // Set up saved-snippets dropdown to insert into the modal textarea.
-    saved_snippets_ui.setup_saved_snippets_dropdown_widget(
-        ".unified-snippet-widget",
-        () => $<HTMLTextAreaElement>("#unified-scheduled-message-content"),
+    saved_snippets_ui.setup_saved_snippets_dropdown_widget(".unified-snippet-widget", () =>
+        $<HTMLTextAreaElement>("#unified-scheduled-message-content"),
     );
 
     // Populate channel dropdown.
@@ -409,8 +412,11 @@ function post_render_unified_modal(): void {
 export function open_unified_scheduled_modal(): void {
     pending_destinations = [];
     dm_pill_widget = null;
+<<<<<<< Updated upstream
     current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
+=======
+>>>>>>> Stashed changes
     dialog_widget.launch({
         modal_title_html: $t_html({defaultMessage: "Schedule message"}),
         modal_content_html: render_unified_scheduled_message_modal(),

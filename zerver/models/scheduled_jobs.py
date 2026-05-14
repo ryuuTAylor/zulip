@@ -245,10 +245,7 @@ class ScheduledMessage(models.Model):
     # recurrence_days to compute next_delivery after each send.
     scheduled_time = models.TimeField(null=True)
 
-    # IANA timezone name (e.g. "America/New_York"). NULL means UTC,
-    # which is the only timezone initially supported; the column is in
-    # place so Layer 2 can add timezone awareness without another
-    # migration.
+    # IANA timezone name (e.g. "America/New_York"). NULL means UTC.
     timezone = models.CharField(max_length=100, null=True)
 
     # Authoritative next-firing UTC datetime for both one-time and
@@ -320,7 +317,7 @@ class ScheduledMessage(models.Model):
             # The topic for direct messages should always be "\x07".
             assert self.topic_name() == Message.DM_TOPIC
 
-            scheduled_message_dict = APIScheduledDirectMessageDict(
+            direct_message_dict = APIScheduledDirectMessageDict(
                 scheduled_message_id=self.id,
                 to=recipient,
                 type=recipient_type_str,
@@ -332,19 +329,20 @@ class ScheduledMessage(models.Model):
                 batch_label=self.batch_label,
             )
             if self.recurrence_type is not None:
-                scheduled_message_dict["recurrence_type"] = self.recurrence_type
-                scheduled_message_dict["recurrence_days"] = self.recurrence_days
+                assert self.recurrence_days is not None
                 assert self.scheduled_time is not None
-                scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+                direct_message_dict["recurrence_type"] = self.recurrence_type
+                direct_message_dict["recurrence_days"] = self.recurrence_days
+                direct_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
                     timespec="minutes"
                 )
-                scheduled_message_dict["timezone"] = self.timezone
-            return scheduled_message_dict
+                direct_message_dict["timezone"] = self.timezone
+            return direct_message_dict
 
         # The recipient for stream messages should always just be the unique stream ID.
         assert len(recipient) == 1
 
-        scheduled_message_dict = APIScheduledStreamMessageDict(
+        stream_message_dict = APIScheduledStreamMessageDict(
             scheduled_message_id=self.id,
             to=recipient[0],
             type=recipient_type_str,
@@ -357,14 +355,15 @@ class ScheduledMessage(models.Model):
             batch_label=self.batch_label,
         )
         if self.recurrence_type is not None:
-            scheduled_message_dict["recurrence_type"] = self.recurrence_type
-            scheduled_message_dict["recurrence_days"] = self.recurrence_days
+            assert self.recurrence_days is not None
             assert self.scheduled_time is not None
-            scheduled_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
+            stream_message_dict["recurrence_type"] = self.recurrence_type
+            stream_message_dict["recurrence_days"] = self.recurrence_days
+            stream_message_dict["scheduled_time"] = self.scheduled_time.isoformat(
                 timespec="minutes"
             )
-            scheduled_message_dict["timezone"] = self.timezone
-        return scheduled_message_dict
+            stream_message_dict["timezone"] = self.timezone
+        return stream_message_dict
 
     def to_reminder_dict(self) -> APIReminderDirectMessageDict:
         assert self.reminder_target_message_id is not None

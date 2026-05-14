@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(./tools/test-js-with-node)",
+      "Bash(./tools/test-js-with-node *)",
+      "Bash(./tools/run-mypy)",
+      "Bash(./tools/run-mypy *)",
+      "Bash(./tools/lint --skip *)",
+      "Bash(npx tsc *)",
+      "Bash(vagrant status)",
+      "Bash(vagrant ssh)"
+    ]
+  }
+}

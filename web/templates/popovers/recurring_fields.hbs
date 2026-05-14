@@ -1,21 +1,21 @@
 {{! Reusable recurring-schedule form fields.
-    Include this partial wherever a recurrence UI is needed (the send-later
-    popover, the unified scheduled-message modal, etc.).
+Include this partial wherever a recurrence UI is needed (the send-later
+popover, the unified scheduled-message modal, etc.).
 
-    Required CSS classes expected by initialize_recurring_builder():
-      .recurring-frequency-input   — <select> for recurrence type
-      .recurring-time-input        — <input type="time"> for HH:MM
-      .recurring-weekday            — <input type="checkbox"> for each weekday
-      .recurring-weekly-options    — wrapper shown/hidden for weekly mode
-      .recurring-monthly-options   — wrapper shown/hidden for monthly mode
-      .recurring-monthly-mode      — <input type="radio"> for monthly sub-mode
-      .recurring-monthday-input    — <select> for calendar day (1–31)
-      .recurring-monthly-ordinal-input — <select> for ordinal (first/last/…)
-      .recurring-monthly-weekday-input — <select> for weekday (MO–SU)
-      .recurring-short-month-note  — note shown when day ≥ 29
-      .recurring-monthly-summary   — live summary text
-      .recurring-builder-destination-summary — destination text (optional)
-      .recurring-builder-feedback  — error/success feedback text
+Required CSS classes expected by initialize_recurring_builder():
+.recurring-frequency-input   — <select> for recurrence type
+.recurring-time-input        — <input type="time"> for HH:MM
+.recurring-weekday            — <input type="checkbox"> for each weekday
+.recurring-weekly-options    — wrapper shown/hidden for weekly mode
+.recurring-monthly-options   — wrapper shown/hidden for monthly mode
+.recurring-monthly-mode      — <input type="radio"> for monthly sub-mode
+.recurring-monthday-input    — <select> for calendar day (1–31)
+.recurring-monthly-ordinal-input — <select> for ordinal (first/last/…)
+.recurring-monthly-weekday-input — <select> for weekday (MO–SU)
+.recurring-short-month-note  — note shown when day ≥ 29
+.recurring-monthly-summary   — live summary text
+.recurring-builder-destination-summary — destination text (optional)
+.recurring-builder-feedback  — error/success feedback text
 }}
 <div class="recurring-batch-grid">
     <label class="recurring-field-label" for="recurring_frequency">{{t "Repeats" }}</label>

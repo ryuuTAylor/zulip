@@ -38,9 +38,29 @@ class ScheduledMessageComputeNextDeliveryTest(ZulipTestCase):
         result = compute_next_delivery(ScheduledMessage.DAILY, [], datetime_time(11, 0), NOW)
         self.assertEqual(result, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC))
 
+    def test_daily_time_not_yet_passed_today_in_timezone(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.DAILY,
+            [],
+            datetime_time(11, 0),
+            NOW,
+            "America/New_York",
+        )
+        self.assertEqual(result, datetime(2026, 1, 7, 16, 0, 0, tzinfo=UTC))
+
     def test_weekly_today_is_matching_day_time_passed(self) -> None:
         result = compute_next_delivery(ScheduledMessage.WEEKLY, [2], datetime_time(9, 0), NOW)
         self.assertEqual(result, datetime(2026, 1, 14, 9, 0, 0, tzinfo=UTC))
+
+    def test_weekly_today_is_matching_day_in_timezone(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.WEEKLY,
+            [2],
+            datetime_time(9, 0),
+            NOW,
+            "America/New_York",
+        )
+        self.assertEqual(result, datetime(2026, 1, 7, 14, 0, 0, tzinfo=UTC))
 
     def test_specific_days_skips_to_next_matching_day(self) -> None:
         result = compute_next_delivery(
@@ -59,6 +79,16 @@ class ScheduledMessageComputeNextDeliveryTest(ZulipTestCase):
             NOW,
         )
         self.assertEqual(result, datetime(2026, 1, 15, 9, 0, 0, tzinfo=UTC))
+
+    def test_monthly_calendar_day_in_timezone(self) -> None:
+        result = compute_next_delivery(
+            ScheduledMessage.MONTHLY,
+            {"type": "calendar_day", "day": 15},
+            datetime_time(9, 0),
+            NOW,
+            "America/New_York",
+        )
+        self.assertEqual(result, datetime(2026, 1, 15, 14, 0, 0, tzinfo=UTC))
 
     def test_monthly_calendar_day_past_this_month(self) -> None:
         result = compute_next_delivery(
@@ -134,6 +164,27 @@ class ScheduledMessageComputeNextDeliveryTest(ZulipTestCase):
             after,
         )
         self.assertEqual(result, datetime(2026, 2, 25, 9, 0, 0, tzinfo=UTC))
+
+    def test_daily_timezone_handles_dst_offset_change(self) -> None:
+        before_dst = datetime(2026, 3, 7, 12, 0, 0, tzinfo=UTC)
+        result = compute_next_delivery(
+            ScheduledMessage.DAILY,
+            [],
+            datetime_time(9, 0),
+            before_dst,
+            "America/New_York",
+        )
+        self.assertEqual(result, datetime(2026, 3, 7, 14, 0, 0, tzinfo=UTC))
+
+        after_dst = datetime(2026, 3, 8, 13, 30, 0, tzinfo=UTC)
+        result = compute_next_delivery(
+            ScheduledMessage.DAILY,
+            [],
+            datetime_time(9, 0),
+            after_dst,
+            "America/New_York",
+        )
+        self.assertEqual(result, datetime(2026, 3, 9, 13, 0, 0, tzinfo=UTC))
 
 
 class ScheduledMessageTest(ZulipTestCase):
@@ -256,7 +307,7 @@ class ScheduledMessageTest(ZulipTestCase):
             self.assertEqual(scheduled_message.timezone, "America/New_York")
             self.assertEqual(
                 scheduled_message.next_delivery,
-                datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC),
+                datetime(2026, 1, 7, 16, 0, 0, tzinfo=UTC),
             )
             self.assertEqual(scheduled_message.scheduled_timestamp, scheduled_message.next_delivery)
 
@@ -269,7 +320,7 @@ class ScheduledMessageTest(ZulipTestCase):
             self.assertEqual(scheduled_messages[0]["timezone"], "America/New_York")
             self.assertEqual(
                 scheduled_messages[0]["scheduled_delivery_timestamp"],
-                int(datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC).timestamp()),
+                int(datetime(2026, 1, 7, 16, 0, 0, tzinfo=UTC).timestamp()),
             )
 
     def test_schedule_weekly_recurring_message(self) -> None:
@@ -328,6 +379,15 @@ class ScheduledMessageTest(ZulipTestCase):
             "monthly recurrence_days must have type 'calendar_day' or 'ordinal_weekday', got 'bad_rule'.",
         )
 
+    def test_schedule_recurring_message_rejects_invalid_timezone(self) -> None:
+        result = self.do_schedule_recurring_message(
+            recurrence_type="daily",
+            recurrence_days=[],
+            scheduled_time="09:00",
+            timezone_name="Gondor/Minas_Tirith",
+        )
+        self.assert_json_error(result, "Invalid timezone. Expected an IANA timezone name.")
+
     def create_recurring_scheduled_message(
         self,
         *,
@@ -335,6 +395,7 @@ class ScheduledMessageTest(ZulipTestCase):
         recurrence_type: str = ScheduledMessage.DAILY,
         recurrence_days: list[int] | dict[str, Any] | None = None,
         scheduled_time: datetime_time = datetime_time(9, 0),
+        timezone_name: str | None = None,
         topic: str = "Test topic",
     ) -> ScheduledMessage:
         sender = self.example_user("hamlet")
@@ -342,10 +403,9 @@ class ScheduledMessageTest(ZulipTestCase):
         recipient = Recipient.objects.get(type=Recipient.STREAM, type_id=stream_id)
         stream = Stream.objects.get(id=stream_id)
 
-        return ScheduledMessage.objects.create(
+        scheduled_message = ScheduledMessage(
             sender=sender,
             recipient=recipient,
-            subject=topic,
             content="Automated recurring test message",
             rendered_content="<p>Automated recurring test message</p>",
             sending_client=get_client("test"),
@@ -357,8 +417,12 @@ class ScheduledMessageTest(ZulipTestCase):
             recurrence_type=recurrence_type,
             recurrence_days=recurrence_days if recurrence_days is not None else [],
             scheduled_time=scheduled_time,
+            timezone=timezone_name,
             delivery_type=ScheduledMessage.SEND_LATER,
         )
+        scheduled_message.set_topic_name(topic_name=topic)
+        scheduled_message.save()
+        return scheduled_message
 
     def create_scheduled_message(self) -> None:
         content = "Test message"
@@ -445,6 +509,31 @@ class ScheduledMessageTest(ZulipTestCase):
             self.assertEqual(
                 scheduled_message.next_delivery, datetime(2026, 1, 7, 11, 0, 0, tzinfo=UTC)
             )
+<<<<<<< Updated upstream
+=======
+            self.assertIsInstance(scheduled_message.delivered_message_id, int)
+
+    def test_successful_deliver_timezone_recurring_scheduled_message(self) -> None:
+        with time_machine.travel(NOW, tick=False):
+            scheduled_message = self.create_recurring_scheduled_message(
+                next_delivery=datetime(2026, 1, 7, 9, 59, 0, tzinfo=UTC),
+                recurrence_type=ScheduledMessage.DAILY,
+                recurrence_days=[],
+                scheduled_time=datetime_time(11, 0),
+                timezone_name="America/New_York",
+            )
+
+            result = try_deliver_one_scheduled_message()
+            self.assertTrue(result)
+
+            scheduled_message.refresh_from_db()
+            self.assertFalse(scheduled_message.delivered)
+            self.assertFalse(scheduled_message.failed)
+            self.assertEqual(
+                scheduled_message.next_delivery,
+                datetime(2026, 1, 7, 16, 0, 0, tzinfo=UTC),
+            )
+>>>>>>> Stashed changes
             self.assertIsInstance(scheduled_message.delivered_message_id, int)
 
     def test_successful_deliver_weekly_recurring_scheduled_message(self) -> None:

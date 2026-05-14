@@ -1,7 +1,10 @@
+from django.contrib.postgres.operations import AddIndexConcurrently
 from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
+    atomic = False
+
     dependencies = [
         ("zerver", "0789_merge_20260323_2256"),
     ]
@@ -53,7 +56,7 @@ class Migration(migrations.Migration):
             reverse_sql=migrations.RunSQL.noop,
             elidable=True,
         ),
-        migrations.AddIndex(
+        AddIndexConcurrently(
             model_name="scheduledmessage",
             index=models.Index(
                 condition=models.Q(("delivered", False), ("failed", False)),

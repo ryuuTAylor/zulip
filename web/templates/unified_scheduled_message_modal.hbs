@@ -5,18 +5,18 @@
         <div class="modal-field-label">{{t "Message" }}</div>
         <div class="unified-modal-snippet-row">
             <a role="button"
-               class="unified-snippet-widget saved-snippets-unified-widget compose_control_button zulip-icon zulip-icon-message-square-text"
-               aria-label="{{t 'Load a saved snippet' }}"
-               tabindex="0"
-               title="{{t 'Load a saved snippet' }}"
-            ></a>
+              class="unified-snippet-widget saved-snippets-unified-widget compose_control_button zulip-icon zulip-icon-message-square-text"
+              aria-label="{{t 'Load a saved snippet' }}"
+              tabindex="0"
+              title="{{t 'Load a saved snippet' }}"
+              ></a>
         </div>
         <textarea
-            id="unified-scheduled-message-content"
-            class="modal-textarea"
-            rows="4"
-            placeholder="{{t 'Write your message here…' }}"
-        ></textarea>
+          id="unified-scheduled-message-content"
+          class="modal-textarea"
+          rows="4"
+          placeholder="{{t 'Write your message here…' }}"
+          ></textarea>
 
         {{! ── Scheduling row: datetime picker + Repeat toggle ─────────────── }}
         <div class="unified-schedule-row">
@@ -25,10 +25,10 @@
                     {{t "Send at" }}
                 </label>
                 <input
-                    id="unified-scheduled-message-datetime"
-                    type="datetime-local"
-                    class="modal_text_input"
-                />
+                  id="unified-scheduled-message-datetime"
+                  type="datetime-local"
+                  class="modal_text_input"
+                  />
             </div>
             <label class="unified-repeat-toggle" for="unified-repeat-checkbox">
                 <input type="checkbox" id="unified-repeat-checkbox" />
@@ -52,11 +52,11 @@
                         <option value="">{{t "— Select a channel —" }}</option>
                     </select>
                     <input
-                        id="unified-topic-input"
-                        type="text"
-                        class="modal_text_input unified-topic-input"
-                        placeholder="{{t 'Topic' }}"
-                    />
+                      id="unified-topic-input"
+                      type="text"
+                      class="modal_text_input unified-topic-input"
+                      placeholder="{{t 'Topic' }}"
+                      />
                 </div>
                 <button type="button" id="unified-add-stream-btn" class="button small rounded">
                     {{t "+ Add channel" }}

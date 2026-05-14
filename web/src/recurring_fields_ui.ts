@@ -242,10 +242,7 @@ export function get_recurring_schedule_request_data($root: JQuery):
  * (used by the popover to show the compose-box destination). Omit it for the
  * unified modal, which manages its own destinations section separately.
  */
-export function initialize_recurring_fields(
-    $root: JQuery,
-    destination_summary?: string,
-): void {
+export function initialize_recurring_fields($root: JQuery, destination_summary?: string): void {
     if ($root.data("recurring-builder-initialized") === true) {
         return;
     }

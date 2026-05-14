@@ -21,16 +21,24 @@ import {parse_html} from "./ui_util.ts";
 import * as unified_scheduled_message_ui from "./unified_scheduled_message_ui.ts";
 import {user_settings} from "./user_settings.ts";
 import * as util from "./util.ts";
+<<<<<<< Updated upstream
 
 // Re-export so external callers (tests, other modules) can still reach these
 // without importing compose_send_menu_popover directly.
 export {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
+=======
+// Re-export so external callers (tests, other modules) can still reach these
+// without importing compose_send_menu_popover directly.
+export {
+    get_recurring_schedule_request_data,
+    initialize_recurring_fields,
+} from "./recurring_fields_ui.ts";
+>>>>>>> Stashed changes
 
 export const SCHEDULING_MODAL_UPDATE_INTERVAL_IN_MILLISECONDS = 60 * 1000;
 const ENTER_SENDS_SELECTION_DELAY = 600;
 
 let send_later_popover_keyboard_toggle = false;
-
 
 export function get_compose_recurring_destination_summary(): string {
     if (compose_state.get_message_type() === "stream") {

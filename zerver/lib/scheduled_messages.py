@@ -1,9 +1,11 @@
 import calendar
-from datetime import date, datetime, time, timedelta, timezone
+import zoneinfo
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
 from django.utils.translation import gettext as _
 
-from zerver.lib.exceptions import ResourceNotFoundError
+from zerver.lib.exceptions import JsonableError, ResourceNotFoundError
+from zerver.lib.timezone import canonicalize_timezone
 from zerver.models import ScheduledMessage, UserProfile
 from zerver.models.scheduled_jobs import (
     APIReminderDirectMessageDict,
@@ -19,39 +21,73 @@ UTC = timezone.utc
 RecurrenceDays = list[int] | dict[str, str | int]
 
 
+def canonicalize_recurrence_timezone(timezone_name: str | None) -> str | None:
+    if timezone_name is None:
+        return None
+
+    timezone_name = timezone_name.strip()
+    if timezone_name == "":
+        return None
+
+    canonical_timezone_name = canonicalize_timezone(timezone_name)
+    try:
+        zoneinfo.ZoneInfo(canonical_timezone_name)
+    except (ValueError, zoneinfo.ZoneInfoNotFoundError):
+        raise JsonableError(_("Invalid timezone. Expected an IANA timezone name."))
+
+    return canonical_timezone_name
+
+
+def get_recurrence_timezone(timezone_name: str | None) -> tzinfo:
+    canonical_timezone_name = canonicalize_recurrence_timezone(timezone_name)
+    if canonical_timezone_name is None:
+        return UTC
+
+    return zoneinfo.ZoneInfo(canonical_timezone_name)
+
+
 def parse_scheduled_time(scheduled_time_str: str) -> time:
-    """Parse a "HH:MM" UTC string into a time object."""
+    """Parse a "HH:MM" local-time string into a time object."""
     try:
         parts = scheduled_time_str.split(":")
         if len(parts) != 2:
             raise ValueError
         hour, minute = int(parts[0]), int(parts[1])
         return time(hour, minute)
-    except (ValueError, AttributeError) as e:
-        raise ValueError("Invalid scheduled_time format. Expected HH:MM in UTC.") from e
+    except (ValueError, AttributeError):
+        raise JsonableError(_("Invalid scheduled_time format. Expected HH:MM."))
 
 
 def validate_recurrence_days(recurrence_days: RecurrenceDays, recurrence_type: str) -> None:
-    """Raise ValueError if recurrence_days is invalid for recurrence_type."""
+    """Raise JsonableError if recurrence_days is invalid for recurrence_type."""
     if recurrence_type == ScheduledMessage.DAILY:
         if recurrence_days:
-            raise ValueError("recurrence_days must be empty for daily recurrence type.")
+            raise JsonableError(_("recurrence_days must be empty for daily recurrence type."))
         return
 
     if recurrence_type in (ScheduledMessage.WEEKLY, ScheduledMessage.SPECIFIC_DAYS):
         if not isinstance(recurrence_days, list) or not recurrence_days:
-            raise ValueError(
-                "recurrence_days is required for weekly and specific_days recurrence types."
+            raise JsonableError(
+                _("recurrence_days is required for weekly and specific_days recurrence types.")
             )
+<<<<<<< Updated upstream
         if not all(isinstance(day, int) and 0 <= day <= 6 for day in recurrence_days):
             raise ValueError("recurrence_days must be integers between 0 (Monday) and 6 (Sunday).")
+=======
+        if not all(0 <= day <= 6 for day in recurrence_days):
+            raise JsonableError(
+                _("recurrence_days must be integers between 0 (Monday) and 6 (Sunday).")
+            )
+>>>>>>> Stashed changes
         return
 
     if recurrence_type == ScheduledMessage.MONTHLY:
         validate_monthly_rule(recurrence_days)
         return
 
-    raise ValueError(f"Unknown recurrence_type {recurrence_type!r}.")
+    raise JsonableError(
+        _("Unknown recurrence_type {recurrence_type}.").format(recurrence_type=recurrence_type)
+    )
 
 
 def access_scheduled_message(
@@ -108,22 +144,27 @@ def _next_calendar_day_monthly(
     day: int,
     scheduled_time: time,
     after: datetime,
+    timezone_info: tzinfo,
 ) -> datetime:
     """Return the next monthly delivery for a calendar-day rule.
 
     day=-1 means the last day of the month; day=1..31 means that
     calendar day, clamped to the last day of shorter months.
     """
-    year, month = after.year, after.month
+    after_local = after.astimezone(timezone_info)
+    year, month = after_local.year, after_local.month
 
     # At most 13 iterations: worst case is the current month already
     # passed, so we need to check the next 12 months.
     for _month_offset in range(13):
         days_in_month = calendar.monthrange(year, month)[1]
         actual_day = days_in_month if day == -1 else min(day, days_in_month)
-        candidate = datetime.combine(date(year, month, actual_day), scheduled_time, tzinfo=UTC)
-        if candidate > after:
-            return candidate
+        candidate = datetime.combine(
+            date(year, month, actual_day), scheduled_time, tzinfo=timezone_info
+        )
+        candidate_utc = candidate.astimezone(UTC)
+        if candidate_utc > after:
+            return candidate_utc
         month += 1
         if month > 12:
             year, month = year + 1, 1
@@ -138,6 +179,7 @@ def _next_ordinal_weekday_monthly(
     weekday: int,
     scheduled_time: time,
     after: datetime,
+    timezone_info: tzinfo,
 ) -> datetime:
     """Return the next monthly delivery for an ordinal-weekday rule.
 
@@ -147,7 +189,8 @@ def _next_ordinal_weekday_monthly(
     If ordinal=4 and a particular month only has three such weekdays,
     that month is skipped and the rule fires in the next qualifying month.
     """
-    year, month = after.year, after.month
+    after_local = after.astimezone(timezone_info)
+    year, month = after_local.year, after_local.month
 
     for _month_offset in range(13):
         days_in_month = calendar.monthrange(year, month)[1]
@@ -163,9 +206,18 @@ def _next_ordinal_weekday_monthly(
             target_day = days_in_month - days_back
 
         if 1 <= target_day <= days_in_month:
+<<<<<<< Updated upstream
             candidate = datetime.combine(date(year, month, target_day), scheduled_time, tzinfo=UTC)
             if candidate > after:
                 return candidate
+=======
+            candidate = datetime.combine(
+                date(year, month, target_day), scheduled_time, tzinfo=timezone_info
+            )
+            candidate_utc = candidate.astimezone(UTC)
+            if candidate_utc > after:
+                return candidate_utc
+>>>>>>> Stashed changes
 
         month += 1
         if month > 12:
@@ -183,31 +235,36 @@ def validate_monthly_rule(rule: object) -> None:
     Call this from the view layer before creating or updating a monthly job.
     """
     if not isinstance(rule, dict):
-        raise ValueError("monthly recurrence_days must be a dict.")
+        raise JsonableError(_("monthly recurrence_days must be a dict."))
 
     rule_type = rule.get("type")
 
     if rule_type == "calendar_day":
         day = rule.get("day")
         if not isinstance(day, int) or not (day == -1 or 1 <= day <= 31):
-            raise ValueError(
-                "calendar_day rule requires 'day' as an integer 1–31 or -1 for last day."
+            raise JsonableError(
+                _("calendar_day rule requires 'day' as an integer 1–31 or -1 for last day.")
             )
 
     elif rule_type == "ordinal_weekday":
         ordinal = rule.get("ordinal")
         weekday = rule.get("weekday")
         if not isinstance(ordinal, int) or not (ordinal == -1 or 1 <= ordinal <= 4):
+<<<<<<< Updated upstream
             raise ValueError("ordinal_weekday rule requires 'ordinal' as 1–4 or -1 for last.")
+=======
+            raise JsonableError(_("ordinal_weekday rule requires 'ordinal' as 1–4 or -1 for last."))
+>>>>>>> Stashed changes
         if not isinstance(weekday, int) or not 0 <= weekday <= 6:
-            raise ValueError(
-                "ordinal_weekday rule requires 'weekday' as an integer 0 (Monday) – 6 (Sunday)."
+            raise JsonableError(
+                _("ordinal_weekday rule requires 'weekday' as an integer 0 (Monday) – 6 (Sunday).")
             )
 
     else:
-        raise ValueError(
-            f"monthly recurrence_days must have type 'calendar_day' or 'ordinal_weekday', "
-            f"got {rule_type!r}."
+        raise JsonableError(
+            _(
+                "monthly recurrence_days must have type 'calendar_day' or 'ordinal_weekday', got {got}."
+            ).format(got=repr(rule_type))
         )
 
 
@@ -216,6 +273,7 @@ def compute_next_delivery(
     recurrence_days: RecurrenceDays,
     scheduled_time: time,
     after: datetime,
+    timezone_name: str | None = None,
 ) -> datetime:
     """Return the next UTC-aware datetime when a recurring scheduled message
     should be delivered.
@@ -229,29 +287,44 @@ def compute_next_delivery(
         Interpretation varies by recurrence_type; see the
         ScheduledMessage.recurrence_days field comment for the full contract.
     scheduled_time:
-        UTC time of day to send.
+        Local time of day to send in timezone_name.
     after:
         UTC-aware datetime. The returned datetime is strictly after this.
+    timezone_name:
+        IANA time zone name for the recurrence rule. NULL means UTC.
     """
+    timezone_info = get_recurrence_timezone(timezone_name)
+    after_local = after.astimezone(timezone_info)
+
     if recurrence_type == ScheduledMessage.DAILY:
-        # Try today first; if the time has already passed, use tomorrow.
-        candidate = datetime.combine(after.date(), scheduled_time, tzinfo=UTC)
-        if candidate <= after:
+        # Try today in the recurrence timezone first; if the time has
+        # already passed, use tomorrow.
+        candidate = datetime.combine(after_local.date(), scheduled_time, tzinfo=timezone_info)
+        candidate_utc = candidate.astimezone(UTC)
+        if candidate_utc <= after:
             candidate += timedelta(days=1)
-        return candidate
+            candidate_utc = candidate.astimezone(UTC)
+        return candidate_utc
 
     if recurrence_type == ScheduledMessage.MONTHLY:
         if not isinstance(recurrence_days, dict):
             raise ValueError("monthly recurrence_days must be a dict.")
         rule_type = recurrence_days.get("type")
         if rule_type == "calendar_day":
+<<<<<<< Updated upstream
             return _next_calendar_day_monthly(int(recurrence_days["day"]), scheduled_time, after)
+=======
+            return _next_calendar_day_monthly(
+                int(recurrence_days["day"]), scheduled_time, after, timezone_info
+            )
+>>>>>>> Stashed changes
         if rule_type == "ordinal_weekday":
             return _next_ordinal_weekday_monthly(
                 int(recurrence_days["ordinal"]),
                 int(recurrence_days["weekday"]),
                 scheduled_time,
                 after,
+                timezone_info,
             )
         raise ValueError(
             f"monthly recurrence_days must have type 'calendar_day' or 'ordinal_weekday', "
@@ -268,11 +341,12 @@ def compute_next_delivery(
     # today is a matching day but the time has already passed — the next
     # occurrence is then exactly one week away.
     for days_ahead in range(8):
-        candidate_date = after.date() + timedelta(days=days_ahead)
+        candidate_date = after_local.date() + timedelta(days=days_ahead)
         if candidate_date.weekday() in recurrence_day_set:
-            candidate = datetime.combine(candidate_date, scheduled_time, tzinfo=UTC)
-            if candidate > after:
-                return candidate
+            candidate = datetime.combine(candidate_date, scheduled_time, tzinfo=timezone_info)
+            candidate_utc = candidate.astimezone(UTC)
+            if candidate_utc > after:
+                return candidate_utc
 
     # Unreachable with a valid non-empty recurrence_days list.
     raise ValueError(  # nocoverage

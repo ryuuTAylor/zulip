@@ -18,6 +18,7 @@ from zerver.lib.recipient_parsing import extract_direct_message_recipient_ids, e
 from zerver.lib.request import RequestNotes
 from zerver.lib.response import json_success
 from zerver.lib.scheduled_messages import (
+    canonicalize_recurrence_timezone,
     compute_next_delivery,
     get_undelivered_reminders,
     get_undelivered_scheduled_messages,
@@ -185,7 +186,8 @@ def create_scheduled_message_backend(
         timezone_name = None
 
     has_recurrence_fields = any(
-        value is not None for value in (recurrence_type, recurrence_days, scheduled_time, timezone)
+        value is not None
+        for value in (recurrence_type, recurrence_days, scheduled_time, timezone_name)
     )
 
     if recurrence_type is None:
@@ -205,6 +207,7 @@ def create_scheduled_message_backend(
             )
         if scheduled_time is None:
             raise JsonableError(_("scheduled_time is required for recurring scheduled messages."))
+<<<<<<< Updated upstream
         try:
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
@@ -215,12 +218,20 @@ def create_scheduled_message_backend(
             validate_recurrence_days(validated_recurrence_days, recurrence_type)
         except ValueError as e:
             raise JsonableError(str(e)) from e
+=======
+        timezone_name = canonicalize_recurrence_timezone(timezone_name)
+        parsed_scheduled_time = parse_scheduled_time(scheduled_time)
+
+        validated_recurrence_days = recurrence_days if recurrence_days is not None else []
+        validate_recurrence_days(validated_recurrence_days, recurrence_type)
+>>>>>>> Stashed changes
 
         deliver_at = compute_next_delivery(
             recurrence_type,
             validated_recurrence_days,
             parsed_scheduled_time,
             timezone_now(),
+            timezone_name,
         )
 
     sender = user_profile
@@ -336,6 +347,7 @@ def create_batch_scheduled_messages(
             )
         if scheduled_time is None:
             raise JsonableError(_("scheduled_time is required for recurring scheduled messages."))
+<<<<<<< Updated upstream
         try:
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
@@ -346,6 +358,12 @@ def create_batch_scheduled_messages(
             validate_recurrence_days(validated_recurrence_days, recurrence_type)
         except ValueError as e:
             raise JsonableError(str(e)) from e
+=======
+        parsed_scheduled_time = parse_scheduled_time(scheduled_time)
+
+        validated_recurrence_days = recurrence_days if recurrence_days is not None else []
+        validate_recurrence_days(validated_recurrence_days, recurrence_type)
+>>>>>>> Stashed changes
 
         deliver_at = compute_next_delivery(
             recurrence_type,

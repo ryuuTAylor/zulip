@@ -5,6 +5,7 @@ import {$t} from "./i18n.ts";
 import type {StateData, scheduled_message_schema} from "./state_data.ts";
 import {realm} from "./state_data.ts";
 import * as timerender from "./timerender.ts";
+import {user_settings} from "./user_settings.ts";
 
 export type ScheduledMessage = z.infer<typeof scheduled_message_schema>;
 
@@ -58,16 +59,30 @@ function format_ordinal_day(day: number): string {
     }
 }
 
-// Converts a stored "HH:MM" string (in the user's intended local timezone) to
-// a human-readable 12-hour format, e.g. "20:22" → "8:22 PM".
-// No timezone conversion is performed — the HH:MM is already in local time.
-function format_time_hhmm(hhmm: string): string {
-    const [hours_str, minutes_str] = hhmm.split(":");
-    const hours = Number.parseInt(hours_str ?? "0", 10);
-    const minutes = Number.parseInt(minutes_str ?? "0", 10);
-    const period = hours >= 12 ? "PM" : "AM";
-    const hours12 = hours % 12 === 0 ? 12 : hours % 12;
-    return `${hours12}:${String(minutes).padStart(2, "0")} ${period}`;
+function format_scheduled_time(scheduled_time: string): string {
+    const parts = scheduled_time.split(":");
+    if (parts.length !== 2) {
+        return scheduled_time;
+    }
+
+    const [hour_string, minute_string] = parts;
+    const hour = Number(hour_string);
+    const minute = Number(minute_string);
+    if (
+        !Number.isInteger(hour) ||
+        !Number.isInteger(minute) ||
+        hour < 0 ||
+        hour > 23 ||
+        minute < 0 ||
+        minute > 59
+    ) {
+        return scheduled_time;
+    }
+
+    return new Intl.DateTimeFormat(user_settings.default_language, {
+        timeZone: "UTC",
+        ...timerender.get_format_options_for_type("time", user_settings.twenty_four_hour_time),
+    }).format(new Date(Date.UTC(1970, 0, 1, hour, minute)));
 }
 
 export function format_scheduled_delivery_label(scheduled_message: ScheduledMessage): string {
@@ -79,21 +94,15 @@ export function format_scheduled_delivery_label(scheduled_message: ScheduledMess
     }
 
     const tz = scheduled_message.timezone ?? "UTC";
-    const time = format_time_hhmm(scheduled_message.scheduled_time ?? "00:00");
+    const time = format_scheduled_time(scheduled_message.scheduled_time ?? "00:00");
 
     if (scheduled_message.recurrence_type === "daily") {
-        return $t(
-            {defaultMessage: "Daily at {time} ({timezone})"},
-            {time, timezone: tz},
-        );
+        return $t({defaultMessage: "Daily at {time} ({timezone})"}, {time, timezone: tz});
     }
 
     if (scheduled_message.recurrence_type === "monthly" && scheduled_message.recurrence_days) {
         if (Array.isArray(scheduled_message.recurrence_days)) {
-            return $t(
-                {defaultMessage: "Monthly at {time} ({timezone})"},
-                {time, timezone: tz},
-            );
+            return $t({defaultMessage: "Monthly at {time} ({timezone})"}, {time, timezone: tz});
         }
 
         if (scheduled_message.recurrence_days.type === "calendar_day") {

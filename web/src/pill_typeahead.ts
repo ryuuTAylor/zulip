@@ -43,9 +43,11 @@ export function set_up_user(
         $element: $input,
         type: "contenteditable",
     };
-    new Typeahead(bootstrap_typeahead_input, {
+    new Typeahead<UserPillData>(bootstrap_typeahead_input, {
         dropup: true,
-        non_tippy_parent_element: opts.non_tippy_parent_element,
+        ...(opts.non_tippy_parent_element !== undefined && {
+            non_tippy_parent_element: opts.non_tippy_parent_element,
+        }),
         source(_query: string): UserPillData[] {
             return user_pill.typeahead_source(pills, exclude_bots);
         },
@@ -92,9 +94,11 @@ export function set_up_stream(
     };
     opts.help_on_empty_strings ??= false;
     opts.hide_on_empty_after_backspace ??= false;
-    new Typeahead(bootstrap_typeahead_input, {
+    new Typeahead<StreamPillData>(bootstrap_typeahead_input, {
         dropup: true,
-        non_tippy_parent_element: opts.non_tippy_parent_element,
+        ...(opts.non_tippy_parent_element !== undefined && {
+            non_tippy_parent_element: opts.non_tippy_parent_element,
+        }),
         helpOnEmptyStrings: opts.help_on_empty_strings,
         hideOnEmptyAfterBackspace: opts.hide_on_empty_after_backspace,
         source(_query: string): StreamPillData[] {

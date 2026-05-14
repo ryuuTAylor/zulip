@@ -18,7 +18,8 @@ set_realm(
     }),
 );
 
-initialize_user_settings({user_settings: {}});
+const user_settings = {};
+initialize_user_settings({user_settings});
 
 const per_day_stamps = {
     "2023-04-30": {
@@ -212,7 +213,7 @@ run_test(
     },
 );
 
-run_test("format_scheduled_delivery_label formats recurring scheduled messages", () => {
+run_test("format_scheduled_delivery_label formats recurring scheduled messages", ({override}) => {
     assert.equal(
         scheduled_messages.format_scheduled_delivery_label({
             scheduled_message_id: 1,
@@ -246,5 +247,45 @@ run_test("format_scheduled_delivery_label formats recurring scheduled messages",
             timezone: null,
         }),
         "translated: Monthly on the last day at 10:30 AM (UTC)",
+<<<<<<< Updated upstream
+=======
+    );
+
+    assert.equal(
+        scheduled_messages.format_scheduled_delivery_label({
+            scheduled_message_id: 3,
+            type: "stream",
+            to: 3,
+            topic: "test topic",
+            content: "hello",
+            rendered_content: "<p>hello</p>",
+            scheduled_delivery_timestamp: 100,
+            failed: false,
+            recurrence_type: "daily",
+            recurrence_days: [],
+            scheduled_time: "12:30",
+            timezone: "America/New_York",
+        }),
+        "translated: Daily at 12:30 PM (America/New_York)",
+    );
+
+    override(user_settings, "twenty_four_hour_time", true);
+    assert.equal(
+        scheduled_messages.format_scheduled_delivery_label({
+            scheduled_message_id: 4,
+            type: "stream",
+            to: 3,
+            topic: "test topic",
+            content: "hello",
+            rendered_content: "<p>hello</p>",
+            scheduled_delivery_timestamp: 100,
+            failed: false,
+            recurrence_type: "daily",
+            recurrence_days: [],
+            scheduled_time: "00:30",
+            timezone: null,
+        }),
+        "translated: Daily at 00:30 (UTC)",
+>>>>>>> Stashed changes
     );
 });

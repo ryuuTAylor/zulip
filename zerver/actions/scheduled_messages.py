@@ -489,6 +489,7 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
             scheduled_message.recurrence_days,
             scheduled_message.scheduled_time,
             timezone_now(),
+            scheduled_message.timezone,
         )
         scheduled_message.save(update_fields=["delivered_message_id", "next_delivery"])
         notify_update_scheduled_message(scheduled_message.sender, scheduled_message)

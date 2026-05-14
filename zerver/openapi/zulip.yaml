@@ -7769,8 +7769,10 @@ paths:
                 scheduled_time:
                   type: string
                   description: |
-                    The UTC time of day when a recurring scheduled message
-                    should fire, formatted as `HH:MM`.
+                    The time of day when a recurring scheduled message should
+                    fire in its configured `timezone`, formatted as `HH:MM`.
+                    If `timezone` is omitted or `null`, this is interpreted
+                    as UTC.
                   example: "09:00"
                 timezone:
                   type: string
@@ -28417,8 +28419,8 @@ components:
           description: |
             Present if this scheduled message is recurring.
 
-            The UTC time of day when the message is scheduled to fire,
-            formatted as `HH:MM`.
+            The time of day when the message is scheduled to fire in its
+            configured `timezone`, formatted as `HH:MM`.
         timezone:
           type: string
           nullable: true
@@ -28439,6 +28441,19 @@ components:
             get the content of the scheduled message.
 
             **Changes**: New in Zulip 7.0 (feature level 181).
+        batch_group_id:
+          type: string
+          nullable: true
+          description: |
+            Identifier shared by all scheduled messages created together as
+            a single batch (multi-destination schedule). `null` for messages
+            that were not scheduled as part of a batch.
+        batch_label:
+          type: string
+          nullable: true
+          description: |
+            Optional user-supplied label for the batch the scheduled message
+            belongs to. `null` when no label was provided.
       additionalProperties: false
       required:
         - scheduled_message_id
@@ -28465,6 +28480,8 @@ components:
             scheduled_time: {}
             timezone: {}
             failed: {}
+            batch_group_id: {}
+            batch_label: {}
     Reminder:
       type: object
       additionalProperties: false
