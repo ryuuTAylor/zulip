@@ -33,7 +33,7 @@ import * as ui_report from "./ui_report.ts";
 import * as user_pill from "./user_pill.ts";
 
 // ---------------------------------------------------------------------------
-// Destination state (mirrors batch_scheduled_messages_ui.ts)
+// Destination state
 // ---------------------------------------------------------------------------
 
 type StreamDestination = {type: "stream"; stream_id: number; topic: string};
