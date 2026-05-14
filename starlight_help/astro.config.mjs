@@ -356,6 +356,7 @@ export default defineConfig({
                         "delete-a-message",
                         "view-and-edit-your-message-drafts",
                         "schedule-a-message",
+                        "schedule-a-recurring-or-batch-message",
                         "message-a-channel-by-email",
                     ],
                 },

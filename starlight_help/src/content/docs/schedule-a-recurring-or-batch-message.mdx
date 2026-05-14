@@ -1,0 +1,170 @@
+---
+title: Schedule a recurring or batch message
+---
+
+import {TabItem, Tabs} from "@astrojs/starlight/components";
+
+import FlattenedSteps from "../../components/FlattenedSteps.astro";
+import ZulipNote from "../../components/ZulipNote.astro";
+import ZulipTip from "../../components/ZulipTip.astro";
+import GoToScheduledMessages from "../include/_GoToScheduledMessages.mdx";
+import StartComposing from "../include/_StartComposing.mdx";
+
+import MoreVerticalIcon from "~icons/zulip-icon/more-vertical";
+import SendIcon from "~icons/zulip-icon/send";
+
+In addition to [scheduling a single message](/help/schedule-a-message),
+you can schedule a message that **repeats** on a daily, weekly, or
+monthly pattern, or **send the same message to multiple destinations**
+in one scheduled job. Both options share a single **Schedule message**
+dialog and can be combined — for example, a weekly status update sent
+to two channels and one direct-message group at the same time.
+
+<ZulipNote>
+  This feature is available to every Zulip member. There are no
+  administrator-only controls or per-organization settings. Each user
+  can only view, edit, and cancel their own scheduled messages.
+</ZulipNote>
+
+## Open the scheduler
+
+<Tabs>
+  <TabItem label="Desktop/Web">
+    <FlattenedSteps>
+      <StartComposing />
+
+      1. Click the **ellipsis** (<MoreVerticalIcon />) next to the
+         **Send** (<SendIcon />) button.
+      1. Click **Schedule message**.
+    </FlattenedSteps>
+
+    The **Schedule message** dialog opens with fields for the message
+    content, send time, optional recurrence, and one or more
+    destinations.
+  </TabItem>
+</Tabs>
+
+## Schedule a recurring message
+
+A recurring message is delivered repeatedly on a schedule you choose,
+until you cancel it.
+
+<Tabs>
+  <TabItem label="Desktop/Web">
+    <FlattenedSteps>
+      1. Open the **Schedule message** dialog (see [above](#open-the-scheduler)).
+      1. Write your message in the **Message** field.
+      1. Check **Repeat** to reveal the recurrence options.
+      1. From the **Repeats** dropdown, choose **Daily**, **Weekly**,
+         or **Monthly**.
+      1. Set the delivery **Time**.
+      1. Configure the pattern as described below.
+      1. Add at least one destination (see
+         [Schedule to multiple destinations](#schedule-to-multiple-destinations)).
+      1. Click **Schedule**.
+    </FlattenedSteps>
+
+    The **Send at** field is ignored when **Repeat** is checked — the
+    next delivery is computed from the recurrence pattern instead.
+  </TabItem>
+</Tabs>
+
+### Weekly pattern
+
+Under **Weekly on**, check the boxes for each weekday the message
+should repeat on. You must pick at least one weekday. The message will
+be delivered on each selected weekday at the configured time.
+
+### Monthly pattern
+
+Under **Monthly on**, choose one of three patterns:
+
+- **On the <day> day of the month** — delivers on the calendar day you
+  pick. For months without that day (e.g. **31** in February), Zulip
+  falls back to the last available day of that month.
+- **On the last day of the month** — delivers on the last calendar
+  day, automatically adjusting for month length and leap years.
+- **On the <ordinal> <weekday>** — delivers on the *n*-th occurrence
+  of a weekday (e.g. "first Monday", "last Friday"). If a month has
+  fewer than four occurrences of the chosen weekday, that month is
+  skipped.
+
+<ZulipTip>
+  A live summary of the monthly pattern appears below the options as
+  you change them, so you can confirm the schedule before submitting.
+</ZulipTip>
+
+## Schedule to multiple destinations
+
+A scheduled message — one-time or recurring — can be delivered to any
+combination of channels and direct-message groups in a single job.
+
+<Tabs>
+  <TabItem label="Desktop/Web">
+    <FlattenedSteps>
+      1. Open the **Schedule message** dialog.
+      1. Write your message.
+      1. *(optional)* Check **Repeat** and configure recurrence.
+      1. *(optional)* If not repeating, set **Send at** to the
+         one-time delivery time.
+      1. Add destinations one at a time:
+         - **For a channel:** pick a channel from **— Select a channel —**,
+           type a topic, and click **+ Add channel**.
+         - **For a direct message:** type a user's name in the
+           direct-message field, select them from the suggestions
+           (repeat for additional recipients), and click
+           **+ Add direct message**.
+      1. Each added destination appears as a chip below
+         **Destinations**. Remove a destination with the **×** button
+         on its chip.
+      1. Click **Schedule**.
+    </FlattenedSteps>
+
+    Zulip rejects duplicate destinations — adding the same channel and
+    topic twice, or the same direct-message recipient set twice, will
+    show an inline error.
+  </TabItem>
+</Tabs>
+
+## Combine recurring and batch
+
+To deliver the same recurring message to multiple destinations, check
+**Repeat**, configure the recurrence, and add multiple destinations
+before clicking **Schedule**. The recurrence runs once per occurrence,
+and on each occurrence the same message is delivered to every
+destination in the list.
+
+## View, edit, or cancel a scheduled message
+
+Recurring and batch scheduled messages appear in the same
+**Scheduled messages** view as one-time scheduled messages.
+
+<Tabs>
+  <TabItem label="Desktop/Web">
+    <FlattenedSteps>
+      <GoToScheduledMessages />
+    </FlattenedSteps>
+
+    Recurring messages show their schedule pattern (e.g. "Every Monday
+    at 9:00 AM") and their next scheduled delivery time. Batch messages
+    show every destination they will be delivered to.
+
+    To cancel a recurring message, click the **delete** icon on its
+    row. Canceling a recurring message stops all future deliveries; it
+    does not unsend any messages that have already been delivered.
+  </TabItem>
+</Tabs>
+
+<ZulipTip>
+  Editing a recurring or batch message is not supported directly —
+  cancel the existing schedule and create a new one with the updated
+  content or destinations.
+</ZulipTip>
+
+## Related articles
+
+* [Schedule a message](/help/schedule-a-message)
+* [Schedule a reminder](/help/schedule-a-reminder)
+* [Saved snippets](/help/saved-snippets)
+* [Message drafts](/help/view-and-edit-your-message-drafts)
+* [Verify a message was sent](/help/verify-your-message-was-successfully-sent)
