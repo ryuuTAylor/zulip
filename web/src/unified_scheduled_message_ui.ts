@@ -20,12 +20,12 @@ import render_unified_scheduled_message_modal from "../templates/unified_schedul
 import * as channel from "./channel.ts";
 import * as compose_state from "./compose_state.ts";
 import * as composebox_typeahead from "./composebox_typeahead.ts";
-import {initialize_recurring_fields, get_recurring_schedule_request_data} from "./recurring_fields_ui.ts";
 import * as dialog_widget from "./dialog_widget.ts";
 import {$t, $t_html} from "./i18n.ts";
-import * as input_pill from "./input_pill.ts";
+import type * as input_pill from "./input_pill.ts";
 import * as people from "./people.ts";
 import * as pill_typeahead from "./pill_typeahead.ts";
+import {get_recurring_schedule_request_data, initialize_recurring_fields} from "./recurring_fields_ui.ts";
 import * as saved_snippets_ui from "./saved_snippets_ui.ts";
 import * as stream_data from "./stream_data.ts";
 import * as sub_store from "./sub_store.ts";
