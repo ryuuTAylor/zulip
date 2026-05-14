@@ -140,15 +140,18 @@ function populate_stream_select(): void {
 }
 
 function update_topic_typeahead(): void {
+    // Always tear down the previous typeahead before rebinding so listeners
+    // don't accumulate on #unified-topic-input across stream switches.
+    current_topic_typeahead?.unlisten();
+    current_topic_typeahead = null;
+
     const stream_id_str = ($<HTMLSelectElement>("#unified-stream-select").val() ?? "").toString();
     if (!stream_id_str) {
-        current_topic_typeahead = null;
         return;
     }
     const stream_id = Number.parseInt(stream_id_str, 10);
     const sub = sub_store.get(stream_id);
     if (sub === undefined) {
-        current_topic_typeahead = null;
         return;
     }
     current_topic_typeahead = composebox_typeahead.initialize_topic_edit_typeahead(
@@ -182,6 +185,7 @@ function add_stream_destination(): void {
 
     $<HTMLSelectElement>("#unified-stream-select").val("");
     $<HTMLInputElement>("#unified-topic-input").val("");
+    current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
 }
 
@@ -335,6 +339,7 @@ function submit_unified_form(): void {
             // the dialog framework reuses the DOM element.
             pending_destinations = [];
             dm_pill_widget = null;
+            current_topic_typeahead?.unlisten();
             current_topic_typeahead = null;
             // Also clear the chip list DOM while the modal is still in the tree.
             $("#unified-destinations-list").empty();
@@ -404,6 +409,7 @@ function post_render_unified_modal(): void {
 export function open_unified_scheduled_modal(): void {
     pending_destinations = [];
     dm_pill_widget = null;
+    current_topic_typeahead?.unlisten();
     current_topic_typeahead = null;
     dialog_widget.launch({
         modal_title_html: $t_html({defaultMessage: "Schedule message"}),
