@@ -260,6 +260,7 @@ python_rules = RuleList(
                     'obj["subject"] = Message.EMPTY_TOPIC_FALLBACK_NAME',
                 ),
                 ("zerver/lib/push_notifications.py", '"subject",'),
+                ("zerver/tests/test_scheduled_messages.py", "subject=topic,"),
             },
             "include_only": {
                 "zerver/data_import/",

@@ -224,9 +224,9 @@ def do_schedule_batch_messages(
             send_request = check_message(sender, client, addressee, content, realm=realm)
         except JsonableError as exc:
             raise JsonableError(
-                _(
-                    "Destination {index} ({dest_label}) is invalid: {error}"
-                ).format(index=i, dest_label=dest_label, error=exc.msg)
+                _("Destination {index} ({dest_label}) is invalid: {error}").format(
+                    index=i, dest_label=dest_label, error=exc.msg
+                )
             ) from exc
 
         send_request.deliver_at = deliver_at
@@ -446,9 +446,7 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
 
     # Limit how late we're willing to send a scheduled message.
     delivery_time = get_scheduled_message_delivery_time(scheduled_message)
-    latest_send_time = delivery_time + timedelta(
-        minutes=SCHEDULED_MESSAGE_LATE_CUTOFF_MINUTES
-    )
+    latest_send_time = delivery_time + timedelta(minutes=SCHEDULED_MESSAGE_LATE_CUTOFF_MINUTES)
     if timezone_now() > latest_send_time:
         raise JsonableError(_("Message could not be sent at the scheduled time."))
 

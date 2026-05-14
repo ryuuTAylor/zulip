@@ -44,9 +44,7 @@ def validate_recurrence_days(recurrence_days: RecurrenceDays, recurrence_type: s
                 "recurrence_days is required for weekly and specific_days recurrence types."
             )
         if not all(isinstance(day, int) and 0 <= day <= 6 for day in recurrence_days):
-            raise ValueError(
-                "recurrence_days must be integers between 0 (Monday) and 6 (Sunday)."
-            )
+            raise ValueError("recurrence_days must be integers between 0 (Monday) and 6 (Sunday).")
         return
 
     if recurrence_type == ScheduledMessage.MONTHLY:
@@ -165,9 +163,7 @@ def _next_ordinal_weekday_monthly(
             target_day = days_in_month - days_back
 
         if 1 <= target_day <= days_in_month:
-            candidate = datetime.combine(
-                date(year, month, target_day), scheduled_time, tzinfo=UTC
-            )
+            candidate = datetime.combine(date(year, month, target_day), scheduled_time, tzinfo=UTC)
             if candidate > after:
                 return candidate
 
@@ -202,9 +198,7 @@ def validate_monthly_rule(rule: object) -> None:
         ordinal = rule.get("ordinal")
         weekday = rule.get("weekday")
         if not isinstance(ordinal, int) or not (ordinal == -1 or 1 <= ordinal <= 4):
-            raise ValueError(
-                "ordinal_weekday rule requires 'ordinal' as 1–4 or -1 for last."
-            )
+            raise ValueError("ordinal_weekday rule requires 'ordinal' as 1–4 or -1 for last.")
         if not isinstance(weekday, int) or not 0 <= weekday <= 6:
             raise ValueError(
                 "ordinal_weekday rule requires 'weekday' as an integer 0 (Monday) – 6 (Sunday)."
@@ -251,9 +245,7 @@ def compute_next_delivery(
             raise ValueError("monthly recurrence_days must be a dict.")
         rule_type = recurrence_days.get("type")
         if rule_type == "calendar_day":
-            return _next_calendar_day_monthly(
-                int(recurrence_days["day"]), scheduled_time, after
-            )
+            return _next_calendar_day_monthly(int(recurrence_days["day"]), scheduled_time, after)
         if rule_type == "ordinal_weekday":
             return _next_ordinal_weekday_monthly(
                 int(recurrence_days["ordinal"]),
@@ -268,9 +260,7 @@ def compute_next_delivery(
 
     # WEEKLY or SPECIFIC_DAYS: find the next matching weekday.
     if not isinstance(recurrence_days, list) or not recurrence_days:
-        raise ValueError(
-            "recurrence_days must not be empty for weekly or specific_days jobs."
-        )
+        raise ValueError("recurrence_days must not be empty for weekly or specific_days jobs.")
 
     recurrence_day_set = set(recurrence_days)
 

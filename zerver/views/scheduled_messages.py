@@ -208,13 +208,13 @@ def create_scheduled_message_backend(
         try:
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
-            raise JsonableError(_(str(e))) from e
+            raise JsonableError(str(e)) from e
 
         validated_recurrence_days = recurrence_days if recurrence_days is not None else []
         try:
             validate_recurrence_days(validated_recurrence_days, recurrence_type)
         except ValueError as e:
-            raise JsonableError(_(str(e))) from e
+            raise JsonableError(str(e)) from e
 
         deliver_at = compute_next_delivery(
             recurrence_type,
@@ -275,9 +275,7 @@ def _validate_batch_destinations(destinations: list[dict[str, Any]]) -> None:
                 raise JsonableError(_("user_ids must be a list of integers."))
 
         else:
-            raise JsonableError(
-                _("Each destination must have type 'stream' or 'direct'.")
-            )
+            raise JsonableError(_("Each destination must have type 'stream' or 'direct'."))
 
 
 @typed_endpoint
@@ -341,13 +339,13 @@ def create_batch_scheduled_messages(
         try:
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
-            raise JsonableError(_(str(e))) from e
+            raise JsonableError(str(e)) from e
 
         validated_recurrence_days = recurrence_days if recurrence_days is not None else []
         try:
             validate_recurrence_days(validated_recurrence_days, recurrence_type)
         except ValueError as e:
-            raise JsonableError(_(str(e))) from e
+            raise JsonableError(str(e)) from e
 
         deliver_at = compute_next_delivery(
             recurrence_type,
@@ -413,9 +411,7 @@ def cancel_batch_scheduled_messages(
 
     # Ensure the caller owns every row in the batch.
     if rows.exclude(sender=user_profile).exists():
-        raise JsonableError(
-            _("You do not have permission to cancel this batch.")
-        )
+        raise JsonableError(_("You do not have permission to cancel this batch."))
 
     cancelled_count = rows.count()
     # Mark as delivered=True so the worker skips them and they drop off the list.
