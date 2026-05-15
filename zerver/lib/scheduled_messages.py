@@ -1,5 +1,6 @@
 import calendar
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils.translation import gettext as _
 
@@ -20,7 +21,12 @@ RecurrenceDays = list[int] | dict[str, str | int]
 
 
 def parse_scheduled_time(scheduled_time_str: str) -> time:
-    """Parse a "HH:MM" UTC string into a time object."""
+    """Parse a "HH:MM" string into a naive time object.
+
+    The caller is responsible for timezone conversion (see
+    localize_scheduled_time) before passing the result to
+    compute_next_delivery, which always works in UTC.
+    """
     try:
         parts = scheduled_time_str.split(":")
         if len(parts) != 2:
@@ -28,7 +34,31 @@ def parse_scheduled_time(scheduled_time_str: str) -> time:
         hour, minute = int(parts[0]), int(parts[1])
         return time(hour, minute)
     except (ValueError, AttributeError) as e:
-        raise ValueError("Invalid scheduled_time format. Expected HH:MM in UTC.") from e
+        raise ValueError("Invalid scheduled_time format. Expected HH:MM.") from e
+
+
+def localize_scheduled_time(scheduled_time: time, timezone_name: str | None) -> time:
+    """Convert a local-time HH:MM to UTC given an IANA timezone name.
+
+    The unified scheduling UI sends scheduled_time as the user's local
+    wall-clock HH:MM together with the browser's IANA timezone string.
+    This function converts that local time to UTC so that
+    compute_next_delivery (which always schedules in UTC) fires at the
+    correct wall-clock time in the user's zone.
+
+    When timezone_name is None or unrecognised, the input is returned
+    unchanged (treated as already UTC), preserving backward compatibility
+    with callers that omit the timezone field.
+    """
+    if timezone_name is None:
+        return scheduled_time
+    try:
+        tz = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, Exception):
+        return scheduled_time  # Unknown timezone — treat as UTC
+    today_local = datetime.now(tz=tz).date()
+    local_dt = datetime.combine(today_local, scheduled_time, tzinfo=tz)
+    return local_dt.astimezone(UTC).time()
 
 
 def validate_recurrence_days(recurrence_days: RecurrenceDays, recurrence_type: str) -> None:

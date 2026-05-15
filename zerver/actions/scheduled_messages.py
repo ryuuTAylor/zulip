@@ -27,7 +27,11 @@ from zerver.lib.exceptions import (
 from zerver.lib.message import SendMessageRequest, access_message, truncate_topic
 from zerver.lib.recipient_parsing import extract_direct_message_recipient_ids, extract_stream_id
 from zerver.lib.reminders import get_reminder_formatted_content, notify_remove_reminder
-from zerver.lib.scheduled_messages import access_scheduled_message, compute_next_delivery
+from zerver.lib.scheduled_messages import (
+    access_scheduled_message,
+    compute_next_delivery,
+    localize_scheduled_time,
+)
 from zerver.lib.string_validation import check_stream_topic
 from zerver.lib.timestamp import datetime_to_global_time
 from zerver.models import Client, Realm, ScheduledMessage, Subscription, UserProfile
@@ -484,10 +488,15 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
     if scheduled_message.recurrence_type is not None:
         assert scheduled_message.recurrence_days is not None
         assert scheduled_message.scheduled_time is not None
+        # scheduled_time is stored as the user's local HH:MM for display.
+        # Convert to UTC before computing the next delivery window.
+        utc_time = localize_scheduled_time(
+            scheduled_message.scheduled_time, scheduled_message.timezone
+        )
         scheduled_message.next_delivery = compute_next_delivery(
             scheduled_message.recurrence_type,
             scheduled_message.recurrence_days,
-            scheduled_message.scheduled_time,
+            utc_time,
             timezone_now(),
         )
         scheduled_message.save(update_fields=["delivered_message_id", "next_delivery"])
