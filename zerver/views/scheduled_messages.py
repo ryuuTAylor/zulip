@@ -21,6 +21,7 @@ from zerver.lib.scheduled_messages import (
     compute_next_delivery,
     get_undelivered_reminders,
     get_undelivered_scheduled_messages,
+    localize_scheduled_time,
     parse_scheduled_time,
     validate_recurrence_days,
 )
@@ -209,6 +210,10 @@ def create_scheduled_message_backend(
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
             raise JsonableError(str(e)) from e
+        # parsed_scheduled_time is the user's LOCAL HH:MM and is stored as-is
+        # in the DB for display purposes.  Convert to UTC only for the initial
+        # next_delivery computation.
+        utc_scheduled_time = localize_scheduled_time(parsed_scheduled_time, timezone_name)
 
         validated_recurrence_days = recurrence_days if recurrence_days is not None else []
         try:
@@ -219,7 +224,7 @@ def create_scheduled_message_backend(
         deliver_at = compute_next_delivery(
             recurrence_type,
             validated_recurrence_days,
-            parsed_scheduled_time,
+            utc_scheduled_time,
             timezone_now(),
         )
 
@@ -340,6 +345,10 @@ def create_batch_scheduled_messages(
             parsed_scheduled_time = parse_scheduled_time(scheduled_time)
         except ValueError as e:
             raise JsonableError(str(e)) from e
+        # parsed_scheduled_time is the user's LOCAL HH:MM and is stored as-is
+        # in the DB for display purposes.  Convert to UTC only for the initial
+        # next_delivery computation.
+        utc_scheduled_time = localize_scheduled_time(parsed_scheduled_time, timezone_name)
 
         validated_recurrence_days = recurrence_days if recurrence_days is not None else []
         try:
@@ -350,7 +359,7 @@ def create_batch_scheduled_messages(
         deliver_at = compute_next_delivery(
             recurrence_type,
             validated_recurrence_days,
-            parsed_scheduled_time,
+            utc_scheduled_time,
             timezone_now(),
         )
 
