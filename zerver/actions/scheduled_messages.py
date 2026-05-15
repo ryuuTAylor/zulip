@@ -387,9 +387,22 @@ def send_scheduled_message(scheduled_message: ScheduledMessage) -> None:
         mark_as_read=[scheduled_message.sender_id] if scheduled_message.read_by_sender else [],
     )[0]
     scheduled_message.delivered_message_id = sent_message_result.message_id
-    scheduled_message.delivered = True
-    scheduled_message.save(update_fields=["delivered", "delivered_message_id"])
-    notify_remove_scheduled_message(scheduled_message.sender, scheduled_message.id)
+    if scheduled_message.recurrence_type is not None:
+        assert scheduled_message.recurrence_days is not None
+        assert scheduled_message.scheduled_time is not None
+        scheduled_message.next_delivery = compute_next_delivery(
+            scheduled_message.recurrence_type,
+            scheduled_message.recurrence_days,
+            scheduled_message.scheduled_time,
+            timezone_now(),
+            scheduled_message.timezone,
+        )
+        scheduled_message.save(update_fields=["delivered_message_id", "next_delivery"])
+        notify_update_scheduled_message(scheduled_message.sender, scheduled_message)
+    else:
+        scheduled_message.delivered = True
+        scheduled_message.save(update_fields=["delivered", "delivered_message_id"])
+        notify_remove_scheduled_message(scheduled_message.sender, scheduled_message.id)
 
 
 def send_failed_scheduled_message_notification(

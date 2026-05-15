@@ -186,6 +186,59 @@ class ScheduledMessage(models.Model):
         default=SEND_LATER,
     )
 
+    # Recurrence fields. A row with recurrence_type == NULL is a
+    # one-time scheduled message (the original behavior); fields below
+    # are ignored. A non-NULL recurrence_type turns this row into a
+    # recurring job: after each successful delivery, next_delivery is
+    # recomputed from scheduled_time + recurrence_days and the row is
+    # left undelivered to fire again.
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    SPECIFIC_DAYS = "specific_days"
+    MONTHLY = "monthly"
+
+    RECURRENCE_TYPES = (
+        (DAILY, "Daily"),
+        (WEEKLY, "Weekly"),
+        (SPECIFIC_DAYS, "Specific days"),
+        (MONTHLY, "Monthly"),
+    )
+
+    recurrence_type = models.CharField(
+        max_length=20,
+        choices=RECURRENCE_TYPES,
+        null=True,
+    )
+
+    # Recurrence rule data; interpretation depends on recurrence_type:
+    #   daily                  — empty list []
+    #   weekly / specific_days — list of weekday ints (0=Monday … 6=Sunday)
+    #   monthly                — dict with one of two shapes:
+    #     {"type": "calendar_day", "day": <int>}
+    #         day 1–31, or -1 for the last day of the month; days beyond
+    #         the month's length are clamped to the last day of that month.
+    #     {"type": "ordinal_weekday", "ordinal": <int>, "weekday": <int>}
+    #         ordinal 1–4 for the nth occurrence, or -1 for the last;
+    #         weekday 0=Monday … 6=Sunday.
+    recurrence_days = models.JSONField(null=True)
+
+    # Wall-clock time of day to fire. Combined with timezone (or UTC if
+    # NULL) and recurrence_days to compute next_delivery after each send.
+    scheduled_time = models.TimeField(null=True)
+
+    # IANA timezone name (e.g. "America/New_York") that scheduled_time
+    # is anchored to. NULL means UTC. The recurrence math evaluates
+    # weekday/calendar-day boundaries in this zone, so e.g. "every
+    # Friday 11 PM America/New_York" reliably fires on Fridays even
+    # though that instant is Saturday in UTC.
+    timezone = models.CharField(max_length=100, null=True)
+
+    # Authoritative next-firing UTC datetime for both one-time and
+    # recurring messages. For one-time rows this equals
+    # scheduled_timestamp; for recurring rows it advances on each
+    # delivery. The delivery worker queries this field.
+    next_delivery = models.DateTimeField(null=True)
+
     class Meta:
         indexes = [
             # We expect a large number of delivered scheduled messages
